@@ -1,0 +1,13 @@
+# Dependencies
+
+
+# Build outputs
+/build
+/dist
+
+# Environment variables
+.env
+.env.local
+
+# OS files
+.DS_Store

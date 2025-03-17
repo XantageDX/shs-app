@@ -1,0 +1,10 @@
+PyPDF2==2.12.1
+camelot_py==0.9.0
+matplotlib==3.9.4
+pandas==2.2.3
+pygwalker==0.4.9.13
+python-dotenv==1.0.1
+SQLAlchemy==2.0.36
+streamlit==1.41.1
+psycopg2-binary==2.9.6
+opencv-python-headless==4.8.1.78
