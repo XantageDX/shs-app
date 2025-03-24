@@ -81,6 +81,27 @@ EXPECTED_COLUMNS = {
         "Commission %",
         "Formula",
         "Ship To"
+    ],
+    "Sunoptic": [
+        "Invoice ID",
+        "Invoice Date",
+        "Customer ID",
+        "Bill Name",
+        "Sales Order ID",
+        "Item ID",
+        "Item Name",
+        "Prod Fam",
+        "Unit Price",
+        "Ship Qty",
+        "Customer Type",
+        "Ship To Name",
+        "Address Ship to",
+        "Ship To City",
+        "Ship To State",
+        "Sales Rep Name",
+        "Line Amount",
+        "Commission %",
+        "Commission $"
     ]
 }
 

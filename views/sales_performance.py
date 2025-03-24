@@ -20,7 +20,7 @@ def get_unique_years():
     query = """
         SELECT DISTINCT "Year"
         FROM sales_rep_business_objective
-        ORDER BY "Year"
+        ORDER BY "Year" DESC
     """
     engine = get_db_connection()
     try:
@@ -464,7 +464,7 @@ def fetch_monthly_data(selected_year, selected_product_line, selected_salesperso
             return merged_df
 
     except Exception as e:
-        st.error(f"Error fetching monthly data: {e}")
+        #st.error(f"Error fetching monthly data: {e}")
         return pd.DataFrame()
     finally:
         engine.dispose()

@@ -10,7 +10,8 @@ from data_loaders.cygnus.cygnus_loader import load_excel_file_cygnus
 from data_loaders.logiquip.logiquip_loader import load_excel_file_logiquip
 from data_loaders.summit_medical.summit_medical_loader import load_pdf_file_summit_medical
 from data_loaders.quickbooks.quickbooks_loader import load_excel_file_quickbooks
-from data_loaders.inspektor.inspektor_loader import load_excel_file_inspektor  # New import
+from data_loaders.inspektor.inspektor_loader import load_excel_file_inspektor
+from data_loaders.sunoptic.sunoptic_loader import load_excel_file_sunoptic
 
 # Import your existing db_utils
 from data_loaders.cygnus.cygnus_db_utils import save_dataframe_to_db as save_cygnus_to_db
@@ -18,6 +19,7 @@ from data_loaders.logiquip.logiquip_db_utils import save_dataframe_to_db as save
 from data_loaders.summit_medical.summit_medical_db_utils import save_dataframe_to_db as save_summit_medical_to_db
 from data_loaders.quickbooks.quickbooks_db_utils import save_dataframe_to_db as save_quickbooks_to_db
 from data_loaders.inspektor.inspektor_db_utils import save_dataframe_to_db as save_inspektor_to_db
+from data_loaders.sunoptic.sunoptic_db_utils import save_dataframe_to_db as save_sunoptic_to_db
 
 # Import validation_utils
 from data_loaders.validation_utils import validate_file_format, EXPECTED_COLUMNS
@@ -39,7 +41,8 @@ FILE_TYPES = {
     "Cygnus": "Cygnus",
     "Summit Medical": "Summit Medical",
     "QuickBooks": "QuickBooks",
-    "InspeKtor": "InspeKtor",  # New file type
+    "InspeKtor": "InspeKtor",
+    "Sunoptic": "Sunoptic",
 }
 
 def load_excel_file(filepath: str, file_type: str, debug_info: list) -> pd.DataFrame:
@@ -58,6 +61,8 @@ def load_excel_file(filepath: str, file_type: str, debug_info: list) -> pd.DataF
         return load_excel_file_quickbooks(filepath)
     elif file_type == "InspeKtor":  # New branch for Inspektor
         return load_excel_file_inspektor(filepath)
+    elif file_type == "Sunoptic":  # New branch for Sunoptic
+        return load_excel_file_sunoptic(filepath)
     else:
         return pd.read_excel(filepath)
 
@@ -323,6 +328,8 @@ def sales_data_tab():
                     debug_output.extend(save_quickbooks_to_db(df_data, "master_quickbooks_sales"))
                 elif f_type == "InspeKtor":
                     debug_output.extend(save_inspektor_to_db(df_data, "master_inspektor_sales"))
+                elif f_type == "Sunoptic":
+                    debug_output.extend(save_sunoptic_to_db(df_data, "master_sunoptic_sales"))
                 # Optionally, you can add a similar saving function for Inspektor if needed.
                 st.success(f"Data from '{f_name}' successfully saved to the '{f_type}' table.")
             except Exception as e:
