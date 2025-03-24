@@ -4,6 +4,18 @@ from sqlalchemy import create_engine, text
 from dotenv import load_dotenv
 import os
 
+def clean_string_value(value):
+    """Clean string values by stripping whitespace and handling None/NaN."""
+    if pd.isna(value) or value is None:
+        return ""
+    return str(value).strip()
+
+def clean_dataframe(df):
+    """Apply string cleaning to all string/object columns in a DataFrame."""
+    for column in df.select_dtypes(include=['object']).columns:
+        df[column] = df[column].apply(clean_string_value)
+    return df
+
 # Load environment variables from .env file
 load_dotenv()
 DATABASE_URL = f"postgresql://{os.getenv('DB_USER')}:{os.getenv('DB_PASSWORD')}@" \
@@ -152,8 +164,17 @@ with tab1:
             if st.button("Save Changes", key="service_save_button"):
                 st.session_state.service_save_initiated = True
                 st.warning("Are you sure you want to replace the current table with the new data?")
+            # if st.session_state.service_save_initiated:
+            #     if st.button("Yes, Replace Table", key="service_confirm_button"):
+            #         update_table_data("service_to_product", edited_df)
+            #         st.session_state.service_save_initiated = False
+            #         # Clear the loaded file if it was used
+            #         st.session_state.loaded_service_df = None
+            ### SAVING WITH STRIPPING GUARDRAILS
             if st.session_state.service_save_initiated:
                 if st.button("Yes, Replace Table", key="service_confirm_button"):
+                    # Clean the data before saving
+                    edited_df = clean_dataframe(edited_df)
                     update_table_data("service_to_product", edited_df)
                     st.session_state.service_save_initiated = False
                     # Clear the loaded file if it was used
@@ -256,10 +277,20 @@ with tab2:
                     st.session_state.save_initiated = True
                     st.warning("Are you sure you want to replace the current table with the new data?")
                     
+            # if st.session_state.save_initiated:
+            #     if st.button("Yes, Replace Table", key="commission_confirm_button"):
+            #         # Reorder the edited DataFrame as well, just to be sure.
+            #         edited_df = edited_df[ordered_columns]
+            #         update_table_data("sales_rep_commission_tier", edited_df)
+            #         st.session_state.save_initiated = False
+            #         st.session_state.loaded_commission_df = None
+            ### SAVING WITH STRIPPING GUARDRAILS
             if st.session_state.save_initiated:
                 if st.button("Yes, Replace Table", key="commission_confirm_button"):
                     # Reorder the edited DataFrame as well, just to be sure.
                     edited_df = edited_df[ordered_columns]
+                    # Clean the data before saving
+                    edited_df = clean_dataframe(edited_df)
                     update_table_data("sales_rep_commission_tier", edited_df)
                     st.session_state.save_initiated = False
                     st.session_state.loaded_commission_df = None
@@ -348,8 +379,16 @@ with tab3:
             if st.button("Save Changes", key="territory_save_button"):
                 st.session_state.territory_save_initiated = True
                 st.warning("Are you sure you want to replace the current table with the new data?")
+            # if st.session_state.territory_save_initiated:
+            #     if st.button("Yes, Replace Table", key="territory_confirm_button"):
+            #         update_table_data("master_sales_rep", edited_df)
+            #         st.session_state.territory_save_initiated = False
+            #         st.session_state.loaded_sales_rep_df = None
+            ### SAVING WITH STRIPPING GUARDRAILS
             if st.session_state.territory_save_initiated:
                 if st.button("Yes, Replace Table", key="territory_confirm_button"):
+                    # Clean the data before saving
+                    edited_df = clean_dataframe(edited_df)
                     update_table_data("master_sales_rep", edited_df)
                     st.session_state.territory_save_initiated = False
                     st.session_state.loaded_sales_rep_df = None
