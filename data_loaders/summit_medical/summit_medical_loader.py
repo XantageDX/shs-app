@@ -151,7 +151,7 @@ def format_table_logic_and_update_df(cleaned_df: pd.DataFrame):
     cleaned_df = cleaned_df.reindex(columns=cols)
 
     # Initialize them
-    cleaned_df["Sales Rep Name"] = "?"         
+    cleaned_df["Sales Rep Name"] = ""         
     #cleaned_df["SalRep %"] = 0.35
 
     # Convert "Comm $" to numeric (remove commas if any) for calculations

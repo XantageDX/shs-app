@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>ChatGPT Canvas Chatbot</title>
+  <style>
+    /* Basic page styles */
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 0;
+      background: #e9ecef;
+    }
+    /* Container for the entire chat interface */
+    #chat-container {
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+    }
+    /* Chat window where messages are displayed */
+    #chat-window {
+      flex: 1;
+      padding: 20px;
+      overflow-y: auto;
+      background-color: #f8f9fa;
+    }
+    /* Styles for each chat message */
+    .chat-message {
+      margin-bottom: 20px;
+      position: relative;
+      padding: 10px;
+      border-radius: 5px;
+      max-width: 70%;
+    }
+    /* User messages are aligned right */
+    .user {
+      background-color: #d1e7dd;
+      align-self: flex-end;
+    }
+    /* Bot messages are aligned left */
+    .bot {
+      background-color: #f8d7da;
+      align-self: flex-start;
+    }
+    /* Annotation marker style */
+    .annotation {
+      display: inline-block;
+      background: #ffeb3b;
+      color: #000;
+      cursor: pointer;
+      margin-left: 5px;
+      padding: 2px 4px;
+      border-radius: 3px;
+      font-size: 12px;
+    }
+    /* Comment box style (hidden by default) */
+    .comment-box {
+      display: none;
+      position: absolute;
+      background: #fff;
+      border: 1px solid #ccc;
+      padding: 10px;
+      top: 100%;
+      left: 0;
+      z-index: 10;
+      width: 250px;
+      box-shadow: 2px 2px 5px rgba(0,0,0,0.1);
+    }
+    /* Input area for new messages */
+    #input-area {
+      display: flex;
+      padding: 10px;
+      background-color: #fff;
+      border-top: 1px solid #ccc;
+    }
+    #user-input {
+      flex: 1;
+      padding: 10px;
+      font-size: 16px;
+      border: 1px solid #ccc;
+      border-radius: 3px;
+    }
+    #send-btn {
+      margin-left: 10px;
+      padding: 10px 20px;
+      font-size: 16px;
+      border: none;
+      border-radius: 3px;
+      background-color: #007bff;
+      color: #fff;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <div id="chat-container">
+    <!-- Chat messages will appear here -->
+    <div id="chat-window"></div>
+    <!-- Input area for users to send messages -->
+    <div id="input-area">
+      <input type="text" id="user-input" placeholder="Type your message here...">
+      <button id="send-btn">Send</button>
+    </div>
+  </div>
+  <script>
+    // Array to store chat messages
+    let messages = [];
+
+    // Function to render messages in the chat window
+    function renderMessages() {
+      const chatWindow = document.getElementById('chat-window');
+      chatWindow.innerHTML = ''; // Clear existing messages
+
+      messages.forEach((msg, index) => {
+        // Create a div for each message
+        const messageDiv = document.createElement('div');
+        messageDiv.className = 'chat-message ' + msg.sender;
+        messageDiv.innerHTML = msg.text;
+
+        // For bot messages, add an annotation marker for comments
+        if (msg.sender === 'bot') {
+          const annotation = document.createElement('span');
+          annotation.className = 'annotation';
+          annotation.textContent = '[?]';
+          // When the annotation is clicked, toggle the comment box
+          annotation.onclick = () => toggleCommentBox(index);
+          messageDiv.appendChild(annotation);
+
+          // Create a hidden comment box attached to this message
+          const commentBox = document.createElement('div');
+          commentBox.className = 'comment-box';
+          commentBox.id = 'comment-box-' + index;
+          // Comment box includes a textarea and a submit button
+          commentBox.innerHTML = `
+            <textarea placeholder="Your comment or question..." rows="3" style="width: 100%;"></textarea>
+            <br/><button onclick="submitComment(${index})" style="margin-top: 5px;">Submit</button>
+          `;
+          messageDiv.appendChild(commentBox);
+        }
+
+        chatWindow.appendChild(messageDiv);
+      });
+
+      // Automatically scroll to the bottom when new messages are added
+      chatWindow.scrollTop = chatWindow.scrollHeight;
+    }
+
+    // Function to toggle (show/hide) the comment box for a given message index
+    function toggleCommentBox(index) {
+      const commentBox = document.getElementById('comment-box-' + index);
+      commentBox.style.display = (commentBox.style.display === 'block') ? 'none' : 'block';
+    }
+
+    // Function to handle comment submission from the comment box
+    function submitComment(index) {
+      const commentBox = document.getElementById('comment-box-' + index);
+      const textarea = commentBox.querySelector('textarea');
+      const comment = textarea.value.trim();
+
+      if (comment !== '') {
+        // Here you could send the comment to your backend or process it further
+        alert('Comment submitted for message ' + index + ':\n' + comment);
+        // Clear the textarea and hide the comment box after submission
+        textarea.value = '';
+        commentBox.style.display = 'none';
+      }
+    }
+
+    // Function to send a new user message
+    function sendMessage() {
+      const userInput = document.getElementById('user-input');
+      const text = userInput.value.trim();
+      if (text === '') return;
+
+      // Add the user message to the messages array
+      messages.push({ sender: 'user', text: text });
+      userInput.value = '';
+      renderMessages();
+
+      // Simulate a bot response after a delay (replace with actual API call as needed)
+      setTimeout(() => {
+        // Sample bot response with HTML content
+        const botText = 'This is a bot response with annotated text. Click the marker to comment or ask questions about specific parts.';
+        messages.push({ sender: 'bot', text: botText });
+        renderMessages();
+      }, 1000);
+    }
+
+    // Event listeners for the send button and pressing Enter in the input field
+    document.getElementById('send-btn').addEventListener('click', sendMessage);
+    document.getElementById('user-input').addEventListener('keypress', function(e) {
+      if (e.key === 'Enter') {
+        sendMessage();
+      }
+    });
+  </script>
+</body>
+</html>

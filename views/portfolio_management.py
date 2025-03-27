@@ -70,6 +70,104 @@ def render_preview_table(df, css_class=""):
     html_table = df.reset_index(drop=True).to_html(index=False, classes=css_class)
     st.markdown(html_table, unsafe_allow_html=True)
 
+def get_unique_sales_rep_names():
+    """Fetch distinct Sales Rep Names from the sales_rep_commission_tier table."""
+    query = """
+        SELECT DISTINCT "Sales Rep Name"
+        FROM sales_rep_commission_tier
+        ORDER BY "Sales Rep Name"
+    """
+    engine = get_db_connection()
+    try:
+        with engine.connect() as conn:
+            result = conn.execute(text(query))
+            sales_reps = [row[0] for row in result.fetchall()]
+        return sales_reps
+    except Exception as e:
+        st.error(f"Error fetching unique Sales Rep names: {e}")
+        return []
+    finally:
+        engine.dispose()
+    
+def validate_sales_territory_upload(df, sales_rep_names):
+    """
+    Validate Sales Territory uploaded data for compliance:
+    1. Check column names and number
+    2. Check for blank cells (except "Valid until")
+    3. Validate date formats for "Valid from" and "Valid until"
+    4. Ensure Sales Rep names exist in the master list
+    
+    Returns:
+        tuple: (is_valid, error_messages)
+    """
+    validation_errors = []
+    is_valid = True
+    
+    # 1. Check required column names and number
+    required_columns = ["Source", "Customer field", "Data field value", "Sales Rep name", "Valid from"]
+    optional_columns = ["Valid until"]
+    
+    # Check all required columns exist
+    missing_columns = [col for col in required_columns if col not in df.columns]
+    if missing_columns:
+        validation_errors.append(f"Missing required columns: {', '.join(missing_columns)}")
+        is_valid = False
+    
+    # Check if there are any unexpected columns
+    expected_columns = required_columns + optional_columns
+    unexpected_columns = [col for col in df.columns if col not in expected_columns]
+    if unexpected_columns:
+        validation_errors.append(f"Unexpected columns found: {', '.join(unexpected_columns)}")
+        is_valid = False
+    
+    # If column validation failed, return early
+    if not is_valid:
+        return is_valid, validation_errors
+    
+    # 2. Check for blank cells in required columns
+    for col in required_columns:
+        blank_rows = df[df[col].isnull() | (df[col].astype(str).str.strip() == "")].index.tolist()
+        if blank_rows:
+            row_numbers = [str(i + 2) for i in blank_rows]  # +2 for excel row number (header + 1-based index)
+            validation_errors.append(f"Empty values found in '{col}' column at rows: {', '.join(row_numbers)}")
+            is_valid = False
+    
+    # 3. Validate date formats
+    date_columns = ["Valid from", "Valid until"]
+    date_regex = r"^\d{4}-\d{2}-\d{2}$"
+    
+    for col in date_columns:
+        if col not in df.columns:
+            continue
+            
+        # For Valid until, we need to filter out NaN values first
+        if col == "Valid until":
+            invalid_date_rows = df[~df[col].isnull() & ~df[col].astype(str).str.match(date_regex)].index.tolist()
+        else:
+            invalid_date_rows = df[~df[col].astype(str).str.match(date_regex)].index.tolist()
+            
+        if invalid_date_rows:
+            row_numbers = [str(i + 2) for i in invalid_date_rows]  # +2 for excel row number
+            validation_errors.append(f"Invalid date format in '{col}' column at rows: {', '.join(row_numbers)}. Format should be YYYY-MM-DD.")
+            is_valid = False
+    
+    # 4. Validate Sales Rep names exist in the master list
+    if "Sales Rep name" in df.columns:
+        invalid_rep_names = []
+        rep_name_errors = []
+        
+        for idx, row in df.iterrows():
+            rep_name = str(row["Sales Rep name"]).strip()
+            if rep_name not in sales_rep_names:
+                invalid_rep_names.append(rep_name)
+                rep_name_errors.append(f"Row {idx + 2}: '{rep_name}'")
+        
+        if invalid_rep_names:
+            validation_errors.append(f"Sales Rep names not found in commission tier table: {', '.join(rep_name_errors)} --- Please add those names with commissions to your 'Sales Reps' table before proceeding.")
+            is_valid = False
+    
+    return is_valid, validation_errors
+
 # Initialize session state flags for editing if not already set.
 if "service_editing" not in st.session_state:
     st.session_state.service_editing = False
@@ -105,22 +203,7 @@ with tab1:
             if st.button("Edit Data", key="service_edit_button"):
                 st.session_state.service_editing = True
             st.dataframe(df_service_to_product, use_container_width=True, hide_index=True, height=600)
-            # # Inject CSS for a larger table (e.g., larger font and full width)
-            # st.markdown(
-            #     """
-            #     <style>
-            #     .large_table {
-            #         width: 75%;
-            #         font-size: 16px;
-            #     }
-            #     .large_table th, .large_table td {
-            #         text-align: left;
-            #     }
-            #     </style>
-            #     """,
-            #     unsafe_allow_html=True
-            # )
-            # render_preview_table(df_service_to_product, css_class="large_table")
+
         except Exception as e:
             st.error(f"Error: {e}")
         # if st.button("Edit Data", key="service_edit_button"):
@@ -321,21 +404,6 @@ with tab3:
             if st.button("Edit Data", key="territory_edit_button"):
                 st.session_state.territory_editing = True
             st.dataframe(df_sales_rep, use_container_width=True, hide_index=True, height=600)
-            # st.markdown(
-            #     """
-            #     <style>
-            #     .large_table {
-            #         width: 80%;
-            #         font-size: 16px;
-            #     }
-            #     .large_table th, .large_table td {
-            #         text-align: left;
-            #     }
-            #     </style>
-            #     """,
-            #     unsafe_allow_html=True
-            # )
-            # render_preview_table(df_sales_rep, css_class="large_table")
         except Exception as e:
             st.error(f"Error: {e}")
 
@@ -349,14 +417,38 @@ with tab3:
             type=["xlsx"],
             key="sales_rep_file_uploader"
         )
+        
+        # Initialize validation error state in session state if not exist
+        if "territory_validation_errors" not in st.session_state:
+            st.session_state.territory_validation_errors = []
+        
         if uploaded_file_sales_rep is not None:
             if st.button("Load from File", key="sales_rep_load_file_button"):
                 try:
+                    # Load the file
                     df_from_file = pd.read_excel(uploaded_file_sales_rep)
-                    st.session_state.loaded_sales_rep_df = df_from_file
-                    st.success("File loaded successfully. You can now edit the data below.")
+                    
+                    # Get valid Sales Rep names for validation
+                    sales_rep_names = get_unique_sales_rep_names()
+                    
+                    # Validate the dataframe
+                    is_valid, validation_errors = validate_sales_territory_upload(df_from_file, sales_rep_names)
+                    
+                    if is_valid:
+                        st.session_state.loaded_sales_rep_df = df_from_file
+                        st.success("File loaded and validated successfully. You can now edit the data below.")
+                        st.session_state.territory_validation_errors = []
+                    else:
+                        st.session_state.territory_validation_errors = validation_errors
+                        # Don't display errors here - we'll display them once in the dedicated error section below
                 except Exception as e:
                     st.error(f"Error loading file: {e}")
+        
+        # Display validation errors if any
+        if st.session_state.territory_validation_errors:
+            st.error("Please fix the following validation errors before proceeding:")
+            for error in st.session_state.territory_validation_errors:
+                st.warning(error)
         
         # Determine which dataframe to show in the editor:
         base_df = st.session_state.loaded_sales_rep_df if st.session_state.loaded_sales_rep_df is not None else fetch_table_data("master_sales_rep")
@@ -365,36 +457,75 @@ with tab3:
         if "Valid until" in base_df.columns:
             base_df["Valid until"] = pd.to_datetime(base_df["Valid until"]).dt.strftime('%Y-%m-%d')
         
+        # Get Sales Rep Names for dropdown
+        sales_rep_names = get_unique_sales_rep_names()
+        
+        # Create column config with Sales Rep name dropdown
+        column_config = {
+            "Sales Rep name": st.column_config.SelectboxColumn(
+                "Sales Rep name",
+                options=sales_rep_names,
+                help="Select a Sales Rep name from the list"
+            ),
+            "Valid from": st.column_config.TextColumn(
+                "Valid from",
+                help="Date format YYYY-MM-DD"
+            ),
+            "Valid until": st.column_config.TextColumn(
+                "Valid until",
+                help="Date format YYYY-MM-DD (can be empty)"
+            )
+        }
+        
         try:
             edited_df = st.data_editor(
                 base_df,
                 use_container_width=True,
                 num_rows="dynamic",
                 hide_index=True,
-                key="sales_rep_editor"
+                key="sales_rep_editor",
+                column_config=column_config
             )
+            
             if "territory_save_initiated" not in st.session_state:
                 st.session_state.territory_save_initiated = False
 
             if st.button("Save Changes", key="territory_save_button"):
-                st.session_state.territory_save_initiated = True
-                st.warning("Are you sure you want to replace the current table with the new data?")
-            # if st.session_state.territory_save_initiated:
-            #     if st.button("Yes, Replace Table", key="territory_confirm_button"):
-            #         update_table_data("master_sales_rep", edited_df)
-            #         st.session_state.territory_save_initiated = False
-            #         st.session_state.loaded_sales_rep_df = None
-            ### SAVING WITH STRIPPING GUARDRAILS
+                # Validate the edited data before saving
+                is_valid, validation_errors = validate_sales_territory_upload(edited_df, sales_rep_names)
+                
+                if is_valid:
+                    st.session_state.territory_save_initiated = True
+                    st.warning("Are you sure you want to replace the current table with the new data?")
+                    st.session_state.territory_validation_errors = []
+                else:
+                    st.session_state.territory_validation_errors = validation_errors
+                    st.error("Validation failed. Please fix the errors before saving:")
+                    for error in validation_errors:
+                        st.warning(error)
+            
             if st.session_state.territory_save_initiated:
                 if st.button("Yes, Replace Table", key="territory_confirm_button"):
                     # Clean the data before saving
                     edited_df = clean_dataframe(edited_df)
+                    
+                    # Convert date columns to datetime format for database
+                    if "Valid from" in edited_df.columns:
+                        edited_df["Valid from"] = pd.to_datetime(edited_df["Valid from"])
+                    if "Valid until" in edited_df.columns:
+                        edited_df["Valid until"] = pd.to_datetime(edited_df["Valid until"], errors='coerce')
+                    
                     update_table_data("master_sales_rep", edited_df)
                     st.session_state.territory_save_initiated = False
                     st.session_state.loaded_sales_rep_df = None
+                    st.session_state.territory_validation_errors = []
+                    
+                    # Reload the page to show updated data
+                    st.rerun()
         except Exception as e:
             st.error(f"Error: {e}")
         
         if st.button("Cancel Editing", key="territory_cancel_button"):
             st.session_state.territory_editing = False
             st.session_state.loaded_sales_rep_df = None
+            st.session_state.territory_validation_errors = []

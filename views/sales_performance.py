@@ -54,14 +54,41 @@ def get_salespeople_by_year(selected_year):
     finally:
         engine.dispose()
 
+# def get_product_lines_by_year_and_salesperson(selected_year, selected_salesperson):
+#     """Fetch distinct product lines from harmonised_table filtered by year and salesperson."""
+#     query = """
+#         SELECT DISTINCT LOWER("Product Line")
+#         FROM harmonised_table
+#         WHERE CAST("Date YYYY" AS INTEGER) = :year
+#           {salesperson_filter}
+#         ORDER BY LOWER("Product Line")
+#     """
+#     salesperson_filter = ""
+#     if selected_salesperson != "All":
+#         salesperson_filter = 'AND "Sales Rep" = :salesperson'
+#     query = query.format(salesperson_filter=salesperson_filter)
+#     engine = get_db_connection()
+#     try:
+#         with engine.connect() as conn:
+#             params = {"year": str(selected_year)}
+#             if selected_salesperson != "All":
+#                 params["salesperson"] = selected_salesperson
+#             result = conn.execute(text(query), params)
+#             product_lines = [row[0] for row in result.fetchall()]
+#         return product_lines
+#     except Exception as e:
+#         st.error(f"Error fetching product lines: {e}")
+#         return []
+#     finally:
+#         engine.dispose()
 def get_product_lines_by_year_and_salesperson(selected_year, selected_salesperson):
     """Fetch distinct product lines from harmonised_table filtered by year and salesperson."""
     query = """
-        SELECT DISTINCT "Product Line"
+        SELECT DISTINCT LOWER("Product Line")
         FROM harmonised_table
         WHERE CAST("Date YYYY" AS INTEGER) = :year
           {salesperson_filter}
-        ORDER BY "Product Line"
+        ORDER BY LOWER("Product Line")
     """
     salesperson_filter = ""
     if selected_salesperson != "All":
@@ -74,8 +101,19 @@ def get_product_lines_by_year_and_salesperson(selected_year, selected_salesperso
             if selected_salesperson != "All":
                 params["salesperson"] = selected_salesperson
             result = conn.execute(text(query), params)
-            product_lines = [row[0] for row in result.fetchall()]
-        return product_lines
+            
+            # Get the lowercase product lines from the database
+            lowercase_product_lines = [row[0] for row in result.fetchall()]
+            
+            # Transform to title case for display
+            display_product_lines = [pl.title() for pl in lowercase_product_lines]
+            
+            # Store mapping between display values and lowercase values
+            st.session_state.product_line_map = {
+                display: lower for display, lower in zip(display_product_lines, lowercase_product_lines)
+            }
+            
+        return display_product_lines
     except Exception as e:
         st.error(f"Error fetching product lines: {e}")
         return []
@@ -292,6 +330,7 @@ def fetch_monthly_data(selected_year, selected_product_line, selected_salesperso
                     SELECT 
                         "Date MM"::INTEGER AS month_number,
                         "Sales Rep",
+                        LOWER("Product Line") AS product_line_lower,
                         "Product Line",
                         SUM("Comm tier 2 diff amount") AS payback
                     FROM harmonised_table
@@ -319,9 +358,9 @@ def fetch_monthly_data(selected_year, selected_product_line, selected_salesperso
                     MAX(h."Commission tier 2 date") AS tier2_date
                 FROM harmonised_table h
                 LEFT JOIN commission_tier2 ct
-                  ON h."Date MM"::INTEGER = ct.month_number
-                 AND h."Sales Rep" = ct."Sales Rep"
-                 AND h."Product Line" = ct."Product Line"
+                ON h."Date MM"::INTEGER = ct.month_number
+                AND h."Sales Rep" = ct."Sales Rep"
+                AND LOWER(h."Product Line") = LOWER(ct."Product Line")
                 WHERE h."Date YYYY" = :year
                   {f'AND LOWER(h."Product Line") = LOWER(:product_line)' if selected_product_line != "All" else ""}
 
@@ -375,8 +414,8 @@ def fetch_monthly_data(selected_year, selected_product_line, selected_salesperso
                                 SELECT "Commission tier threshold"
                                 FROM sales_rep_commission_tier_threshold
                                 WHERE lower("Sales Rep name") = lower(:sales_rep)
-                                  AND "Year" = :year
-                                  AND lower("Product line") = lower(:product_line)
+                                AND "Year" = :year
+                                AND lower("Product line") = lower(:product_line)
                             """),
                             {"sales_rep": sales_rep, "year": str(selected_year), "product_line": product_line_val}
                         ).fetchone()
@@ -526,9 +565,21 @@ with col1:
                 salespeople.insert(0, "All")
             
             selected_salesperson = st.selectbox("Choose a Salesperson:", salespeople)
+            # product_lines = get_product_lines_by_year_and_salesperson(selected_year, selected_salesperson)
+            # product_lines.insert(0, "All")
+            # selected_product_line = st.selectbox("Choose a Product Line:", product_lines)
+            # In your UI section where you show the dropdown
             product_lines = get_product_lines_by_year_and_salesperson(selected_year, selected_salesperson)
-            product_lines.insert(0, "All")
-            selected_product_line = st.selectbox("Choose a Product Line:", product_lines)
+            display_product_lines = ["All"] + product_lines  # Add "All" option at the beginning
+
+            selected_product_line_display = st.selectbox("Choose a Product Line:", display_product_lines)
+
+            # Convert the display value back to lowercase for backend processing
+            if selected_product_line_display != "All":
+                selected_product_line = st.session_state.product_line_map.get(selected_product_line_display, selected_product_line_display.lower())
+            else:
+                selected_product_line = "All"
+
 
 monthly_data = fetch_monthly_data(selected_year, selected_product_line, selected_salesperson)
 if monthly_data is None or monthly_data.empty:

@@ -52,6 +52,10 @@ def load_excel_file_quickbooks(filepath: str) -> pd.DataFrame:
     # Drop rows where 'Quantity' == None
     if 'Quantity' in df.columns:
         df = df[df['Quantity'].notnull()]
+    
+    # Convert 'Quantity' to float with two decimal places
+    if 'Quantity' in df.columns:
+        df['Quantity'] = pd.to_numeric(df['Quantity'], errors='coerce').fillna(0.0).round(2)
 
     # # Drop rows where 'Customer name' == "HHS Transfers Customer"
     if 'Company name' in df.columns:
@@ -119,7 +123,7 @@ def load_excel_file_quickbooks(filepath: str) -> pd.DataFrame:
         df['Quantity'] = pd.to_numeric(df['Quantity'], errors='coerce')
 
         # Fill NaN values with 0 to ensure calculations work
-        df[['Purchase price', 'Quantity']] = df[['Purchase price', 'Quantity']].fillna(0)
+        df[['Purchase price', 'Quantity']] = df[['Purchase price', 'Quantity']].fillna(0.0)
 
         # Add the new columns
         df.insert(df.columns.get_loc('Quantity') + 1, 'Margin', 

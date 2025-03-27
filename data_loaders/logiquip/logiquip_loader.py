@@ -126,20 +126,6 @@ def load_excel_file_logiquip(filepath: str) -> pd.DataFrame:
             df[col] = df[col].astype(str).replace(["", "nan"], pd.NA)
         df[existing_cols] = df[existing_cols].ffill()
 
-    # ✅ Add the "SalRep %" column with a static value of 0.35
-    #df["SalRep %"] = 0.35
-
-    # ✅ Add the "SalRep Comm Amt" column calculated as "Comm Amt" * "SalRep %"
-    # if "Comm Amt" in df.columns:
-    #     df["SalRep Comm Amt"] = df["Comm Amt"].astype(float) * df["SalRep %"]
-    #     df["SalRep Comm Amt"] = df["SalRep Comm Amt"].map(lambda x: f"{x:.2f}" if pd.notnull(x) else "")
-
-    # # ✅ Add the "SHS Margin" column calculated as "Comm Amt" - "SalRep Comm Amt"
-    # if "Comm Amt" in df.columns and "SalRep Comm Amt" in df.columns:
-    #     df["SHS Margin"] = df["Comm Amt"].astype(float) - df["SalRep Comm Amt"].astype(float)
-    #     df["SHS Margin"] = df["SHS Margin"].map(lambda x: f"{x:.2f}" if pd.notnull(x) else "")
-
-    # ✅ Add the "SteppingStone" column
     if "Ship To Zip" in df.columns and "Customer" in df.columns:
         df["SteppingStone"] = df["Ship To Zip"] + "; " + df["Customer"]
 

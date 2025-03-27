@@ -162,7 +162,7 @@ def update_harmonised_table(table_name: str):
                     data_source = "master_inspektor_sales"
 
                     # Delete existing rows for the same product line in harmonised_table
-                    delete_query = text("""DELETE FROM harmonised_table WHERE "Product Line" = :product_line AND "Data Source" = :data_source""")
+                    delete_query = text("""DELETE FROM harmonised_table WHERE LOWER("Product Line") = LOWER(:product_line) AND "Data Source" = :data_source""")
                     conn.execute(delete_query, {"product_line": product_line, "data_source": data_source})
                     conn.commit()
                     print(f"✅ Deleted existing rows in 'harmonised_table' for Product Line: {product_line} with Data Source: {data_source}.")
@@ -208,7 +208,7 @@ def update_commission_tier_2_date():
             threshold_query = text("""
                 SELECT "Sales Rep name", "Year", "Commission tier threshold"
                 FROM sales_rep_commission_tier_threshold
-                WHERE "Product line" = 'InspeKtor'
+                WHERE LOWER("Product line") = LOWER('InspeKtor')
             """)
             threshold_df = pd.read_sql_query(threshold_query, conn)
             # Create a dictionary keyed by (Sales Rep, Year) with the threshold value.
@@ -221,7 +221,7 @@ def update_commission_tier_2_date():
             harmonised_query = text("""
                 SELECT *
                 FROM harmonised_table
-                WHERE "Product Line" = 'InspeKtor'
+                WHERE LOWER("Product Line") = LOWER('InspeKtor')
             """)
             harmonised_df = pd.read_sql_query(harmonised_query, conn)
             
@@ -237,9 +237,9 @@ def update_commission_tier_2_date():
                 reset_query = text("""
                     UPDATE harmonised_table
                     SET "Commission tier 2 date" = NULL
-                    WHERE "Product Line" = 'InspeKtor'
-                      AND "Sales Rep" = :sales_rep
-                      AND "Date YYYY" = :year
+                    WHERE LOWER("Product Line") = LOWER('InspeKtor')
+                    AND "Sales Rep" = :sales_rep
+                    AND "Date YYYY" = :year
                 """)
                 conn.execute(reset_query, {"sales_rep": sales_rep, "year": year})
                 conn.commit()
@@ -274,10 +274,10 @@ def update_commission_tier_2_date():
                 update_query = text("""
                     UPDATE harmonised_table
                     SET "Commission tier 2 date" = :commission_tier_2_date
-                    WHERE "Product Line" = 'InspeKtor'
-                      AND "Sales Rep" = :sales_rep
-                      AND "Date YYYY" = :year
-                      AND "Date MM" >= :threshold_month
+                    WHERE LOWER("Product Line") = LOWER('InspeKtor')
+                    AND "Sales Rep" = :sales_rep
+                    AND "Date YYYY" = :year
+                    AND "Date MM" >= :threshold_month
                 """)
                 conn.execute(update_query, {
                     "commission_tier_2_date": commission_tier_2_date,

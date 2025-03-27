@@ -33,8 +33,8 @@ def map_sunoptic_to_harmonised():
             "Comm tier 2 diff amount" = ("Commission $" * "Commission tier 2 rate") - ("Commission $" * "Commission tier 1 rate")
       - Select and rename columns as follows:
             "Invoice Date"       AS Date,
-            "Invoice Date YYYY"  AS "Date YYYY",
-            "Invoice Date MM"    AS "Date MM",
+            "Commission Date YYYY"          AS "Date YYYY",
+            "Commission Date MM"            AS "Date MM",
             "Sales Rep Name"     AS "Sales Rep",
             "Line Amount"        AS "Sales Actual",
             "Commission $"       AS "Rev Actual",
@@ -58,8 +58,8 @@ WITH commission_rates AS (
 commission_calculations AS (
     SELECT 
         mss."Invoice Date",
-        mss."Invoice Date MM",
-        mss."Invoice Date YYYY",
+        mss."Commission Date MM",
+        mss."Commission Date YYYY",
         mss."Sales Rep Name",
         mss."Line Amount",
         mss."Commission $",
@@ -72,8 +72,8 @@ commission_calculations AS (
 )
 SELECT 
     "Invoice Date" AS "Date",
-    "Invoice Date MM" AS "Date MM",
-    "Invoice Date YYYY" AS "Date YYYY",
+    "Commission Date MM" AS "Date MM",
+    "Commission Date YYYY" AS "Date YYYY",
     "Sales Rep Name" AS "Sales Rep",
     "Line Amount" AS "Sales Actual",
     "Commission $" AS "Rev Actual",
@@ -95,7 +95,7 @@ FROM commission_calculations;
 
 def save_dataframe_to_db(df: pd.DataFrame, table_name: str = "master_sunoptic_sales"):
     """
-    Save data to the 'master_sunoptic_sales' table by removing entries based on 'Invoice Date MM' and 'Invoice Date YYYY'.
+    Save data to the 'master_sunoptic_sales' table by removing entries based on 'Date MM' and 'Date YYYY'.
     Return debug messages as a list.
     """
     table_name = table_name.lower()
@@ -107,12 +107,12 @@ def save_dataframe_to_db(df: pd.DataFrame, table_name: str = "master_sunoptic_sa
     
     try:
         with engine.connect() as conn:
-            # Identify the "Invoice Date MM" and "Invoice Date YYYY" values from the dataframe
-            date_values = df[['Invoice Date MM', 'Invoice Date YYYY']].drop_duplicates().values.tolist()
+            # Identify the "Commission Date MM" and "Commission Date YYYY" values from the dataframe
+            date_values = df[['Commission Date MM', 'Commission Date YYYY']].drop_duplicates().values.tolist()
 
             # Convert the date_values into a filterable SQL condition
             condition = " OR ".join(
-                [f'("Invoice Date MM" = \'{mm}\' AND "Invoice Date YYYY" = \'{yyyy}\')' 
+                [f'("Commission Date MM" = \'{mm}\' AND "Commission Date YYYY" = \'{yyyy}\')' 
                  for mm, yyyy in date_values]
             )
 
@@ -120,8 +120,8 @@ def save_dataframe_to_db(df: pd.DataFrame, table_name: str = "master_sunoptic_sa
             delete_query = text(f"DELETE FROM {table_name} WHERE {condition}")
             conn.execute(delete_query)
             conn.commit()
-            print(f"✅ Deleted records from '{table_name}' matching specified Invoice Date values.")
-            debug_messages.append(f"✅ Deleted records from '{table_name}' matching specified Invoice Date values.")
+            print(f"✅ Deleted records from '{table_name}' matching specified Date values.")
+            debug_messages.append(f"✅ Deleted records from '{table_name}' matching specified Date values.")
 
             # Append the dataframe to the table
             df.to_sql(table_name, con=engine, if_exists="append", index=False)

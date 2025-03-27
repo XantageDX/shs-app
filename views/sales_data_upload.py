@@ -141,13 +141,26 @@ def check_for_valid_sales_rep(df: pd.DataFrame) -> list:
     Check if the names in the raw DataFrame column "Sales Rep Name" are present
     in the sales_rep_commission_tier table (using the "Sales Rep Name" column).
     Returns a list of names that are missing.
+    
+    Exception: Empty/null values are allowed and not flagged as missing.
     """
     if "Sales Rep Name" not in df.columns:
-        return []  # or return an error message if this column is required
+        return []  # No validation needed if column doesn't exist
+    
+    # Get the set of valid names from the database
     valid_names = set(get_unique_sales_rep_names())
-    df_names = set(df["Sales Rep Name"].dropna().unique())
+    
+    # Get unique non-empty sales rep names from the dataframe
+    df_names = set(df["Sales Rep Name"].dropna().astype(str))
+    
+    # Remove empty strings from the set of names to check
+    df_names = {name for name in df_names if name.strip() != ""}
+    
+    # Find names that exist in the dataframe but not in the valid names list
     missing_names = list(df_names - valid_names)
+    
     return missing_names
+
 
 def sales_data_tab():
     st.title("Sales Data Upload Hub")
@@ -184,6 +197,39 @@ def sales_data_tab():
             st.session_state.pop("confirmed_file_bytes", None)
             st.session_state.pop("confirmed_file_name", None)
             st.session_state.pop("confirmed_file_type", None)
+        
+        # Add year and month selectors specifically for Sunoptic
+        if selected_file_type == "Sunoptic":
+            import datetime
+            current_year = datetime.datetime.now().year
+            year_options = [None, current_year - 1, current_year, current_year + 1]
+            month_options = [None, "January", "February", "March", "April", "May", "June", 
+                            "July", "August", "September", "October", "November", "December"]
+            
+            selected_year = st.selectbox("Select Year:", year_options, 
+                                    format_func=lambda x: "Select a year..." if x is None else x)
+            selected_month = st.selectbox("Select Month:", month_options,
+                                        format_func=lambda x: "Select a month..." if x is None else x)
+            
+            # Check if both selections are made
+            if selected_year is not None and selected_month is not None:
+                # Store these in session state for later use
+                st.session_state["sunoptic_selected_year"] = selected_year
+                st.session_state["sunoptic_selected_month"] = selected_month
+                st.session_state["sunoptic_selected_month_num"] = month_options.index(selected_month)  # Adjust for None
+                st.success("Year and month selected successfully!")
+            else:
+                # Clear previous selections if either is not selected
+                if "sunoptic_selected_year" in st.session_state:
+                    del st.session_state["sunoptic_selected_year"]
+                if "sunoptic_selected_month" in st.session_state:
+                    del st.session_state["sunoptic_selected_month"]
+                if "sunoptic_selected_month_num" in st.session_state:
+                    del st.session_state["sunoptic_selected_month_num"]
+                
+                # Show warning if user has already confirmed a file but hasn't selected both year and month
+                if "confirmed_file_bytes" in st.session_state and selected_file_type == "Sunoptic":
+                    st.warning("Please select both a year and a month before proceeding.")
 
     with col2:
         st.subheader("Step 2: Upload a File to Process")
@@ -229,6 +275,45 @@ def sales_data_tab():
             finally:
                 os.remove(tmp_file_path)
 
+        # # For Sunoptic specifically, check if year and month are selected
+        # if file_type == "Sunoptic":
+        #     if "sunoptic_selected_year" not in st.session_state or "sunoptic_selected_month" not in st.session_state:
+        #         st.error("For Sunoptic files, you must select both a Year and a Month before processing.")
+        #         return
+
+        #     # Add the selected year and month as columns
+        #     df["Commission Date YYYY"] = st.session_state["sunoptic_selected_year"]
+            
+        #     # Format month as 01, 02, etc.
+        #     month_num = st.session_state["sunoptic_selected_month_num"]
+        #     df["Commission Date MM"] = f"{month_num:02d}"
+        # For Sunoptic specifically, check if year and month are selected
+        if file_type == "Sunoptic":
+            if "sunoptic_selected_year" not in st.session_state or "sunoptic_selected_month" not in st.session_state:
+                st.error("For Sunoptic files, you must select both a Year and a Month before processing.")
+                return
+
+            # Add the selected year and month as columns
+            df["Commission Date YYYY"] = st.session_state["sunoptic_selected_year"]
+            
+            # Format month as 01, 02, etc.
+            month_num = st.session_state["sunoptic_selected_month_num"]
+            df["Commission Date MM"] = f"{month_num:02d}"
+            
+            # Reorder columns to place the new date columns after "Invoice Date"
+            if "Invoice Date" in df.columns:
+                cols = df.columns.tolist()
+                # Remove the new columns from their current positions
+                cols.remove("Commission Date YYYY")
+                cols.remove("Commission Date MM")
+                # Insert them after "Invoice Date"
+                invoice_date_index = cols.index("Invoice Date")
+                cols.insert(invoice_date_index + 1, "Commission Date YYYY")
+                cols.insert(invoice_date_index + 2, "Commission Date MM")
+                # Apply the new column order
+                df = df[cols]
+
+
         numeric_columns = ["Net Sales Amount", "Comm Rate", "Comm $"]
         for col in numeric_columns:
             if col in df.columns:
@@ -248,12 +333,20 @@ def sales_data_tab():
             )
             return
 
-        # NEW: Check for valid Sales Rep names
+        # Check for valid Sales Rep names
         missing_names = check_for_valid_sales_rep(df)
         if missing_names:
             st.error("The following sales reps don't have any commission tier setup: " + ", ".join(missing_names))
-            # You can optionally return here to force the user to fix the issue before proceeding:
-            #return
+            st.warning("Please set up commission tiers for these sales reps in the Portfolio Management section before proceeding.")
+            
+            # Add a link to the Portfolio Management page
+            if st.button("Go to Portfolio Management"):
+                # This will redirect users to the Portfolio Management page
+                #st.session_state.selected_page = "Portfolio Management"
+                st.rerun()
+            
+            # Return to stop further processing
+            return
 
         amount_line_issues = []
         if file_type == "QuickBooks":
@@ -263,8 +356,7 @@ def sales_data_tab():
                 rows_str = ", ".join(map(str, amount_line_issues))
                 st.markdown(f"**Row(s):** {rows_str}")
 
-        # --- New: Configure Column Constraints for Editable DataFrame ---
-        # Check if the DataFrame has a sales rep column.
+        # --- Configure Column Constraints for Editable DataFrame ---
         rep_column = None
         if "Sales Rep Name" in df.columns:
             rep_column = "Sales Rep Name"
@@ -273,14 +365,14 @@ def sales_data_tab():
 
         col_config = {}
         if rep_column:
-            rep_options = get_unique_sales_rep_names()  # This function defined above.
+            rep_options = get_unique_sales_rep_names()
             col_config[rep_column] = st.column_config.SelectboxColumn(
                 rep_column,
                 options=rep_options,
                 help="Select a Sales Rep from the list"
             )
 
-        # Now render the editable data editor with our column configuration.
+        # Render the editable data editor with our column configuration
         unique_key = f"editor_{file_name}_{file_type}"
         edited_df = st.data_editor(
             df,
@@ -288,7 +380,7 @@ def sales_data_tab():
             num_rows="dynamic",
             hide_index=False,
             key=unique_key,
-            column_config=col_config  # Apply our drop-down configuration
+            column_config=col_config
         )
 
         st.session_state.dataframes[file_name] = (edited_df, file_type)
@@ -296,6 +388,9 @@ def sales_data_tab():
     except Exception as e:
         st.error(f"Error loading {file_name} of type {file_type}: {e}")
         return
+
+    # Rest of the function remains unchanged
+    # ...
 
     if st.button("Confirm and Save to Database"):
         if not st.session_state.dataframes:

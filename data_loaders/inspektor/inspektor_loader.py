@@ -69,8 +69,13 @@ def load_excel_file_inspektor(filepath: str) -> pd.DataFrame:
         cols.insert(date_index + 2, "Date MM")
         df = df[cols]
     
+    # Before:
     # 6. Convert "Quantity" to integers.
-    df["Quantity"] = pd.to_numeric(df["Quantity"], errors="coerce").astype("Int64")
+    # df["Quantity"] = pd.to_numeric(df["Quantity"], errors="coerce").astype("Int64")
+
+    # After:
+    # 6. Convert "Quantity" to floats with two decimal places.
+    df["Quantity"] = pd.to_numeric(df["Quantity"], errors="coerce").round(2)
     
     # 7. Convert "Total" and "Formula" to floats with two decimals.
     for col in ["Total", "Formula"]:
