@@ -67,6 +67,17 @@ EXPECTED_COLUMNS = {
         "Date YYYY",
         "Sales Rep Name"
     ],
+
+    "Summit Medical Excel": [
+        "Row Labels",
+        "St",
+        "ZIP Code",
+        "Invoice #",
+        "Item",
+        "CommRate",
+        "Sum of Net Sales Amount",
+        "Sum of Comm $"
+    ],
     "InspeKtor": [ # Don't count index column!
         #"Sales Rep",
         #"Name",
