@@ -45,26 +45,6 @@
 #     "Sunoptic": "Sunoptic",
 # }
 
-# # def load_excel_file(filepath: str, file_type: str, debug_info: list) -> pd.DataFrame:
-# #     """
-# #     Generic dispatcher to the correct loader function, or a direct read_excel if none matched.
-# #     `filepath` is the path to a temporary file on disk.
-# #     """
-# #     if file_type == "Cygnus":
-# #         return load_excel_file_cygnus(filepath)
-# #     elif file_type == "Logiquip":
-# #         return load_excel_file_logiquip(filepath)
-# #     elif file_type == "Summit Medical":
-# #         # Should not reach here if we handle PDF logic separately, but let's keep it for safety.
-# #         return load_pdf_file_summit_medical(filepath)
-# #     elif file_type == "QuickBooks":
-# #         return load_excel_file_quickbooks(filepath)
-# #     elif file_type == "InspeKtor":  # New branch for Inspektor
-# #         return load_excel_file_inspektor(filepath)
-# #     elif file_type == "Sunoptic":  # New branch for Sunoptic
-# #         return load_excel_file_sunoptic(filepath)
-# #     else:
-# #         return pd.read_excel(filepath)
 # def load_excel_file(filepath: str, file_type: str, debug_info: list) -> pd.DataFrame:
 #     """
 #     Generic dispatcher to the correct loader function, or a direct read_excel if none matched.
@@ -213,7 +193,13 @@
 #                 "confirmed_file_bytes",
 #                 "confirmed_file_name",
 #                 "confirmed_file_type",
-#                 "dataframes"
+#                 "dataframes",
+#                 "summit_selected_year",
+#                 "summit_selected_month",
+#                 "summit_selected_month_num",
+#                 "sunoptic_selected_year",
+#                 "sunoptic_selected_month",
+#                 "sunoptic_selected_month_num"
 #             ]
 #             for key in keys_to_clear:
 #                 if key in st.session_state:
@@ -230,6 +216,20 @@
 #             st.session_state.pop("confirmed_file_bytes", None)
 #             st.session_state.pop("confirmed_file_name", None)
 #             st.session_state.pop("confirmed_file_type", None)
+            
+#             # Clear date selection state when changing product lines
+#             if "summit_selected_year" in st.session_state:
+#                 del st.session_state["summit_selected_year"]
+#             if "summit_selected_month" in st.session_state:
+#                 del st.session_state["summit_selected_month"]
+#             if "summit_selected_month_num" in st.session_state:
+#                 del st.session_state["summit_selected_month_num"]
+#             if "sunoptic_selected_year" in st.session_state:
+#                 del st.session_state["sunoptic_selected_year"]
+#             if "sunoptic_selected_month" in st.session_state:
+#                 del st.session_state["sunoptic_selected_month"]
+#             if "sunoptic_selected_month_num" in st.session_state:
+#                 del st.session_state["sunoptic_selected_month_num"]
         
 #         # Add year and month selectors specifically for Sunoptic
 #         if selected_file_type == "Sunoptic":
@@ -263,45 +263,6 @@
 #                 # Show warning if user has already confirmed a file but hasn't selected both year and month
 #                 if "confirmed_file_bytes" in st.session_state and selected_file_type == "Sunoptic":
 #                     st.warning("Please select both a year and a month before proceeding.")
-        
-#         ######## NEW SUMMIT MEDICAL
-#         # Add year and month selectors specifically for Summit Medical Excel files
-#         if selected_file_type == "Summit Medical" and "confirmed_file_name" in st.session_state:
-#             # Check if the confirmed file is an Excel file
-#             if st.session_state["confirmed_file_name"].lower().endswith(('.xlsx', '.xls')):
-#                 import datetime
-#                 current_year = datetime.datetime.now().year
-#                 year_options = [None, current_year - 1, current_year, current_year + 1]
-#                 month_options = [None, "January", "February", "March", "April", "May", "June", 
-#                                 "July", "August", "September", "October", "November", "December"]
-                
-#                 st.write("For Excel files, please select the report date:")
-#                 selected_year = st.selectbox("Select Year:", year_options, 
-#                                         format_func=lambda x: "Select a year..." if x is None else x,
-#                                         key="summit_year_selector")
-#                 selected_month = st.selectbox("Select Month:", month_options,
-#                                             format_func=lambda x: "Select a month..." if x is None else x,
-#                                             key="summit_month_selector")
-                
-#                 # Check if both selections are made
-#                 if selected_year is not None and selected_month is not None:
-#                     # Store these in session state for later use
-#                     st.session_state["summit_selected_year"] = selected_year
-#                     st.session_state["summit_selected_month"] = selected_month
-#                     st.session_state["summit_selected_month_num"] = month_options.index(selected_month)
-#                     st.success("Year and month selected successfully!")
-#                 else:
-#                     # Clear previous selections if either is not selected
-#                     if "summit_selected_year" in st.session_state:
-#                         del st.session_state["summit_selected_year"]
-#                     if "summit_selected_month" in st.session_state:
-#                         del st.session_state["summit_selected_month"]
-#                     if "summit_selected_month_num" in st.session_state:
-#                         del st.session_state["summit_selected_month_num"]
-                    
-#                     # Show warning if user has already confirmed a file but hasn't selected both year and month
-#                     if "confirmed_file_bytes" in st.session_state:
-#                         st.warning("Please select both a year and a month before proceeding.")
 
 #     with col2:
 #         st.subheader("Step 2: Upload a File to Process")
@@ -313,8 +274,70 @@
 #             st.session_state["confirmed_file_type"] = uploaded_file.type
 #             st.success(f"File '{uploaded_file.name}' has been confirmed!")
 
-#     if "confirmed_file_bytes" not in st.session_state:
-#         st.warning("Please upload and confirm a file to proceed.")
+#     # Special handling for Summit Medical Excel files
+#     # Check if the confirmed file is a Summit Medical Excel file
+#     is_summit_excel = (
+#         st.session_state.get("selected_file_type") == "Summit Medical" and
+#         "confirmed_file_name" in st.session_state and
+#         st.session_state["confirmed_file_name"].lower().endswith(('.xlsx', '.xls'))
+#     )
+    
+#     # Display date selectors for Summit Medical Excel files
+#     if is_summit_excel:
+#         st.subheader("Summit Medical Excel Date Selection")
+#         st.write("For Summit Medical Excel files, please select the report date:")
+        
+#         import datetime
+#         current_year = datetime.datetime.now().year
+#         year_options = [None, current_year - 1, current_year, current_year + 1]
+#         month_options = [None, "January", "February", "March", "April", "May", "June", 
+#                         "July", "August", "September", "October", "November", "December"]
+        
+#         col1, col2 = st.columns(2)
+#         with col1:
+#             selected_year = st.selectbox("Select Year:", year_options, 
+#                                     format_func=lambda x: "Select a year..." if x is None else x,
+#                                     key="summit_year_selector")
+#         with col2:
+#             selected_month = st.selectbox("Select Month:", month_options,
+#                                         format_func=lambda x: "Select a month..." if x is None else x,
+#                                         key="summit_month_selector")
+        
+#         # Check if both selections are made
+#         if selected_year is not None and selected_month is not None:
+#             # Store these in session state for later use
+#             st.session_state["summit_selected_year"] = selected_year
+#             st.session_state["summit_selected_month"] = selected_month
+#             st.session_state["summit_selected_month_num"] = month_options.index(selected_month)
+#             st.success("Year and month selected successfully!")
+#         else:
+#             # Clear previous selections if either is not selected
+#             if "summit_selected_year" in st.session_state:
+#                 del st.session_state["summit_selected_year"]
+#             if "summit_selected_month" in st.session_state:
+#                 del st.session_state["summit_selected_month"]
+#             if "summit_selected_month_num" in st.session_state:
+#                 del st.session_state["summit_selected_month_num"]
+
+#     # Check if we should prevent processing
+#     should_stop_processing = False
+    
+#     # If Summit Medical Excel but no date selection
+#     if is_summit_excel and ("summit_selected_year" not in st.session_state or "summit_selected_month" not in st.session_state):
+#         st.warning("⚠️ Please select both a year and month above before proceeding.")
+#         should_stop_processing = True
+    
+#     # If it's Sunoptic but no date selection  
+#     if (st.session_state.get("selected_file_type") == "Sunoptic" and 
+#         "confirmed_file_bytes" in st.session_state and
+#         ("sunoptic_selected_year" not in st.session_state or "sunoptic_selected_month" not in st.session_state)):
+#         st.warning("⚠️ Please select both a year and month for Sunoptic before proceeding.")
+#         should_stop_processing = True
+    
+#     # Stop processing if needed
+#     if should_stop_processing or "confirmed_file_bytes" not in st.session_state:
+#         if "confirmed_file_bytes" not in st.session_state:
+#             st.warning("Please upload and confirm a file to proceed.")
 #         return
 
 #     st.markdown("---")
@@ -347,18 +370,6 @@
 #             finally:
 #                 os.remove(tmp_file_path)
 
-#         # # For Sunoptic specifically, check if year and month are selected
-#         # if file_type == "Sunoptic":
-#         #     if "sunoptic_selected_year" not in st.session_state or "sunoptic_selected_month" not in st.session_state:
-#         #         st.error("For Sunoptic files, you must select both a Year and a Month before processing.")
-#         #         return
-
-#         #     # Add the selected year and month as columns
-#         #     df["Commission Date YYYY"] = st.session_state["sunoptic_selected_year"]
-            
-#         #     # Format month as 01, 02, etc.
-#         #     month_num = st.session_state["sunoptic_selected_month_num"]
-#         #     df["Commission Date MM"] = f"{month_num:02d}"
 #         # For Sunoptic specifically, check if year and month are selected
 #         if file_type == "Sunoptic":
 #             if "sunoptic_selected_year" not in st.session_state or "sunoptic_selected_month" not in st.session_state:
@@ -384,7 +395,6 @@
 #                 cols.insert(invoice_date_index + 2, "Commission Date MM")
 #                 # Apply the new column order
 #                 df = df[cols]
-
 
 #         numeric_columns = ["Net Sales Amount", "Comm Rate", "Comm $"]
 #         for col in numeric_columns:
@@ -461,9 +471,6 @@
 #         st.error(f"Error loading {file_name} of type {file_type}: {e}")
 #         return
 
-#     # Rest of the function remains unchanged
-#     # ...
-
 #     if st.button("Confirm and Save to Database"):
 #         if not st.session_state.dataframes:
 #             st.warning("No data available to save. Please upload and process files first.")
@@ -497,7 +504,6 @@
 #                     debug_output.extend(save_inspektor_to_db(df_data, "master_inspektor_sales"))
 #                 elif f_type == "Sunoptic":
 #                     debug_output.extend(save_sunoptic_to_db(df_data, "master_sunoptic_sales"))
-#                 # Optionally, you can add a similar saving function for Inspektor if needed.
 #                 st.success(f"Data from '{f_name}' successfully saved to the '{f_type}' table.")
 #             except Exception as e:
 #                 st.error(f"Error saving '{f_name}' to the database: {e}")
@@ -581,6 +587,7 @@ from data_loaders.summit_medical.summit_medical_loader import load_pdf_file_summ
 from data_loaders.quickbooks.quickbooks_loader import load_excel_file_quickbooks
 from data_loaders.inspektor.inspektor_loader import load_excel_file_inspektor
 from data_loaders.sunoptic.sunoptic_loader import load_excel_file_sunoptic
+from data_loaders.ternio.ternio_loader import load_excel_file_ternio  # Add the new Ternio loader
 
 # Import your existing db_utils
 from data_loaders.cygnus.cygnus_db_utils import save_dataframe_to_db as save_cygnus_to_db
@@ -589,6 +596,7 @@ from data_loaders.summit_medical.summit_medical_db_utils import save_dataframe_t
 from data_loaders.quickbooks.quickbooks_db_utils import save_dataframe_to_db as save_quickbooks_to_db
 from data_loaders.inspektor.inspektor_db_utils import save_dataframe_to_db as save_inspektor_to_db
 from data_loaders.sunoptic.sunoptic_db_utils import save_dataframe_to_db as save_sunoptic_to_db
+from data_loaders.ternio.ternio_db_utils import save_dataframe_to_db as save_ternio_to_db  # Add the new Ternio db utils
 
 # Import validation_utils
 from data_loaders.validation_utils import validate_file_format, EXPECTED_COLUMNS
@@ -604,7 +612,7 @@ def get_db_connection():
     engine = create_engine(DATABASE_URL)
     return engine
 
-# Updated FILE_TYPES including Inspektor
+# Updated FILE_TYPES including Ternio
 FILE_TYPES = {
     "Logiquip": "Logiquip",
     "Cygnus": "Cygnus",
@@ -612,6 +620,7 @@ FILE_TYPES = {
     "QuickBooks": "QuickBooks",
     "InspeKtor": "InspeKtor",
     "Sunoptic": "Sunoptic",
+    "Ternio": "Ternio",  # Add the new Ternio file type
 }
 
 def load_excel_file(filepath: str, file_type: str, debug_info: list) -> pd.DataFrame:
@@ -641,10 +650,12 @@ def load_excel_file(filepath: str, file_type: str, debug_info: list) -> pd.DataF
             return load_pdf_file_summit_medical(filepath)
     elif file_type == "QuickBooks":
         return load_excel_file_quickbooks(filepath)
-    elif file_type == "InspeKtor":  # New branch for Inspektor
+    elif file_type == "InspeKtor":  # Branch for Inspektor
         return load_excel_file_inspektor(filepath)
-    elif file_type == "Sunoptic":  # New branch for Sunoptic
+    elif file_type == "Sunoptic":  # Branch for Sunoptic
         return load_excel_file_sunoptic(filepath)
+    elif file_type == "Ternio":  # Branch for Ternio
+        return load_excel_file_ternio(filepath)
     else:
         return pd.read_excel(filepath)
 
@@ -1073,6 +1084,8 @@ def sales_data_tab():
                     debug_output.extend(save_inspektor_to_db(df_data, "master_inspektor_sales"))
                 elif f_type == "Sunoptic":
                     debug_output.extend(save_sunoptic_to_db(df_data, "master_sunoptic_sales"))
+                elif f_type == "Ternio":
+                    debug_output.extend(save_ternio_to_db(df_data, "master_ternio_sales"))
                 st.success(f"Data from '{f_name}' successfully saved to the '{f_type}' table.")
             except Exception as e:
                 st.error(f"Error saving '{f_name}' to the database: {e}")
