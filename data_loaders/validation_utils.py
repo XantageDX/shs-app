@@ -310,6 +310,27 @@ EXPECTED_COLUMNS = {
         "UD F LOTBUS",
         "Commission Percentage",
         "Commission Amount"
+    ],
+    "Chemence": [
+        "Source",
+        "Sales Group",
+        "Source ID",
+        "Account Number",
+        "Account Name",
+        "Street",
+        "City",
+        "State",
+        "Zip",
+        "Description",
+        "Part #",
+        "Invoice Date",
+        "Qty Shipped",
+        "UOM",
+        "Sales Price",
+        "Sales Total",
+        "Commission",
+        "Unit Price",
+        "Agreement"
     ]
 }
 
