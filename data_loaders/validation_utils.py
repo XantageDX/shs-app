@@ -284,6 +284,32 @@ EXPECTED_COLUMNS = {
         "Paid",
         "Comm Rate",
         "Comm Amount"
+    ],
+    "Novo": [
+        "Salesperson Number",
+        "AR Division Number",
+        "Customer Number",
+        "Bill To Name",
+        "Ship To Name",
+        "Invoice Number",
+        "Invoice Date",
+        "Customer PO Number",
+        "Item Code",
+        "Alias Item Number",
+        "Item Code Description",
+        "Quantity Ordered",
+        "Qty Shipped",
+        "Quantity Backordered",
+        "Unit Price",
+        "Extension",
+        "Comment",
+        "Order Date",
+        "Sales Order Number",
+        "Ship To State",
+        "Ship To Zip Code",
+        "UD F LOTBUS",
+        "Commission Percentage",
+        "Commission Amount"
     ]
 }
 
