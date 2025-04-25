@@ -1352,7 +1352,8 @@ def sales_data_tab():
                 return
 
             # Add the selected year and month as columns
-            df["Commission Date YYYY"] = st.session_state["sunoptic_selected_year"]
+            # Convert the year to string explicitly to prevent thousands separator formatting
+            df["Commission Date YYYY"] = str(st.session_state["sunoptic_selected_year"])
             
             # Format month as 01, 02, etc.
             month_num = st.session_state["sunoptic_selected_month_num"]
