@@ -65,23 +65,27 @@ def load_excel_file_sunoptic(filepath: str) -> pd.DataFrame:
         df["Commission %"] = df["Commission %"].astype(str).str.replace('%', '', regex=False)
         df["Commission %"] = pd.to_numeric(df["Commission %"], errors='coerce')
 
-    # 2. Convert "Invoice Date" from m/d/YYYY to YYYY-MM-DD
-    date_columns = ["Invoice Date"]
-    for date_col in date_columns:
-        if "Invoice Date" in df.columns:
-            if date_col in df.columns:
-                df[date_col] = pd.to_datetime(df[date_col], errors='coerce')
-                df[date_col] = df[date_col].dt.strftime('%Y-%m-%d')
+    # 2. Convert "Invoice Date" to "Revenue Recognition Date" fields
+    if "Invoice Date" in df.columns:
+        # Convert to datetime for processing
+        invoice_date = pd.to_datetime(df["Invoice Date"], errors='coerce')
+        
+        # Create Revenue Recognition Date columns
+        df["Revenue Recognition Date"] = invoice_date.dt.strftime('%Y-%m-%d')
+        df["Revenue Recognition Date YYYY"] = invoice_date.dt.year.astype(str)
+        df["Revenue Recognition Date MM"] = invoice_date.dt.month.astype(str).str.zfill(2)
+        
+        # Remove the original Invoice Date column - we don't need it anymore
+        df = df.drop(columns=["Invoice Date"])
     
-        # 4. Remove '$' from "Unit Price", "Line Amount", and "Commission $"
+    # 4. Remove '$' from "Unit Price", "Line Amount", and "Commission $"
     monetary_columns = ["Unit Price", "Line Amount", "Commission $"]
     for col in monetary_columns:
         if col in df.columns:
             df[col] = df[col].astype(str).str.replace('$', '', regex=False).str.replace(',', '', regex=False)
             df[col] = pd.to_numeric(df[col], errors='coerce').round(2)
-            #df[col] = pd.to_numeric(df[col], errors='coerce')
     
-    # 5. Convert "Ship Qty" to integers
+    # 5. Convert "Ship Qty" to numeric with specified precision
     if "Ship Qty" in df.columns:
         df["Ship Qty"] = pd.to_numeric(df["Ship Qty"], errors='coerce').fillna(0).round(2)
 
@@ -116,7 +120,4 @@ def load_excel_file_sunoptic(filepath: str) -> pd.DataFrame:
     if "Customer ID" in df.columns:
         df["Sales Rep Name"] = df["Customer ID"].apply(enrich_sales_rep)
         
-        # # Ensure no None or empty values remain
-        # df["Sales Rep Name"] = df["Sales Rep Name"].fillna("Unknown")
-    
     return df

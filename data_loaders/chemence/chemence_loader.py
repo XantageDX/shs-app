@@ -49,6 +49,8 @@ def load_excel_file_chemence(filepath: str) -> pd.DataFrame:
     """
     Load and transform a Chemence Excel file into a pandas DataFrame.
     Ensures all numeric columns are shown with two decimals (e.g. 0.00, 2.30, 0.10).
+    
+    Commission Date columns will be populated by sales_data_upload.py from user input.
     """
     # 1. Read & validate
     df = pd.read_excel(filepath, header=3)
@@ -58,26 +60,29 @@ def load_excel_file_chemence(filepath: str) -> pd.DataFrame:
     df = df.copy()
     df.dropna(how="all", inplace=True)
 
-    # 2. Commission Date logic
-    if {"Year", "Month"}.issubset(df.columns):
-        df["Commission Date YYYY"] = df["Year"].astype(str)
-        month_map = {
-            "January":"01","February":"02","March":"03","April":"04",
-            "May":"05","June":"06","July":"07","August":"08",
-            "September":"09","October":"10","November":"11","December":"12",
-            **{i: f"{i:02d}" for i in range(1,13)}
-        }
-        df["Commission Date MM"] = df["Month"].apply(
-            lambda x: month_map.get(x, f"{int(x):02d}" if isinstance(x,(int,float)) else x)
-        )
-        df["Commission Date"] = df["Commission Date YYYY"] + "-" + df["Commission Date MM"]
-    elif "Invoice Date" in df.columns:
-        df["Invoice Date"] = pd.to_datetime(df["Invoice Date"], errors="coerce")
-        df["Commission Date YYYY"] = df["Invoice Date"].dt.year.astype(str)
-        df["Commission Date MM"] = df["Invoice Date"].dt.month.apply(lambda m: f"{m:02d}")
-        df["Commission Date"] = df["Commission Date YYYY"] + "-" + df["Commission Date MM"]
+    # 2. REMOVED - Commission Date logic
+    # We're no longer extracting Commission Date from the file
+    # This will be added by the sales_data_upload.py from the user's selection
+    
+    # 3. Revenue Recognition Date logic
+    if "Invoice Date" in df.columns:
+        # Rename Invoice Date to Revenue Recognition Date
+        df["Revenue Recognition Date"] = df["Invoice Date"].astype(str)
+        
+        # Extract year and month parts
+        if pd.api.types.is_datetime64_any_dtype(df["Invoice Date"]):
+            # If it's already a datetime
+            df["Revenue Recognition Date YYYY"] = df["Invoice Date"].dt.year.astype(str)
+            df["Revenue Recognition Date MM"] = df["Invoice Date"].dt.month.apply(lambda m: f"{m:02d}")
+        else:
+            # If it's a string, extract the parts
+            df["Revenue Recognition Date YYYY"] = df["Revenue Recognition Date"].str[:4]
+            df["Revenue Recognition Date MM"] = df["Revenue Recognition Date"].str[-2:]
+        
+        # Drop the original Invoice Date column
+        df = df.drop(columns=["Invoice Date"])
 
-    # 3. Numeric conversion & rounding
+    # 4. Numeric conversion & rounding
     numeric_columns = ["Qty Shipped", "Sales Price", "Sales Total", "Commission", "Unit Price"]
     for col in numeric_columns:
         if col in df.columns:
@@ -89,7 +94,7 @@ def load_excel_file_chemence(filepath: str) -> pd.DataFrame:
                         .round(2)
             )
 
-    # 4. Compute Comm %
+    # 5. Compute Comm %
     if {"Commission", "Sales Total"}.issubset(df.columns):
         df["Comm %"] = (
             df["Commission"].div(df["Sales Total"])
@@ -97,16 +102,15 @@ def load_excel_file_chemence(filepath: str) -> pd.DataFrame:
                          .round(2)
         )
 
-    # 5. Force two-decimal formatting on all floats (turns them into strings)
+    # 6. Force two-decimal formatting on all floats (turns them into strings)
     float_cols = df.select_dtypes(include="float").columns
     df[float_cols] = df[float_cols].applymap(lambda x: f"{x:.2f}")
 
-    # 6. Format Invoice Date as YYYY-MM-DD string
-    if "Invoice Date" in df.columns:
-        df["Invoice Date"] = pd.to_datetime(df["Invoice Date"], errors="coerce") \
-                                     .dt.strftime("%Y-%m-%d")
+    # 7. Format revenue recognition date if it's a datetime
+    if "Revenue Recognition Date" in df.columns and pd.api.types.is_datetime64_any_dtype(df["Revenue Recognition Date"]):
+        df["Revenue Recognition Date"] = df["Revenue Recognition Date"].dt.strftime("%Y-%m-%d")
 
-    # 7. Ensure text columns are clean strings
+    # 8. Ensure text columns are clean strings
     text_columns = [
         "Source", "Sales Group", "Source ID", "Account Number", "Account Name",
         "Street", "City", "State", "Zip", "Description", "Part #", "UOM", "Agreement"
@@ -126,7 +130,7 @@ def load_excel_file_chemence(filepath: str) -> pd.DataFrame:
             else:
                 df[col] = df[col].astype(str).replace("nan", "").str.strip()
 
-    # 8. Enrich with Sales Rep Name lookup
+    # 9. Enrich with Sales Rep Name lookup
     try:
         master_df = load_master_sales_rep()
         def lookup_sales_rep(source_id):
@@ -145,11 +149,17 @@ def load_excel_file_chemence(filepath: str) -> pd.DataFrame:
         print(f"Error enriching Sales Rep Name: {e}")
         df["Sales Rep Name"] = ""
 
-    # 9. Reorder columns & fill any missing
+    # 10. Reorder columns to place date fields together and create empty Commission Date placeholders
+    # Create empty Commission Date columns that will be populated by sales_data_upload.py
+    df["Commission Date"] = ""
+    df["Commission Date YYYY"] = ""
+    df["Commission Date MM"] = ""
+    
     desired_columns = [
         "Source", "Commission Date", "Commission Date YYYY", "Commission Date MM",
         "Sales Group", "Source ID", "Sales Rep Name", "Account Number", "Account Name",
-        "Street", "City", "State", "Zip", "Description", "Part #", "Invoice Date",
+        "Street", "City", "State", "Zip", "Description", "Part #", 
+        "Revenue Recognition Date", "Revenue Recognition Date YYYY", "Revenue Recognition Date MM",
         "Qty Shipped", "UOM", "Sales Price", "Sales Total", "Commission", "Unit Price",
         "Comm %", "Agreement"
     ]
@@ -159,4 +169,3 @@ def load_excel_file_chemence(filepath: str) -> pd.DataFrame:
     df = df[desired_columns]
 
     return df
-

@@ -21,13 +21,11 @@ def load_excel_file_inspektor(filepath: str) -> pd.DataFrame:
     Processing steps:
       1. Drop the column "Sales Rep".
       2. Drop rows where "Name" is empty.
-      3. Convert "Date" column from m/d/YYYY to YYYY-MM-DD.
-      4. Add "Date YYYY" column with the first 4 characters from "Date".
-      5. Add "Date MM" column with the 6th and 7th characters from "Date".
-         (Both "Date YYYY" and "Date MM" will be inserted right after the "Date" column)
-      6. Convert "Quantity" to integers.
+      3. Rename Date to Revenue Recognition Date.
+      4. Add "Revenue Recognition Date YYYY" with the first 4 characters from "Revenue Recognition Date".
+      5. Add "Revenue Recognition Date MM" with the 6th and 7th characters from "Revenue Recognition Date".
+      6. Convert "Quantity" to floats with two decimal places.
       7. Convert "Total" and "Formula" to floats with two decimals.
-         (Original format: "$9,646.20" -> 9646.20)
       8. Convert "Commission %" from percentage to factor.
       9. Rename "Name" column to "Sales Rep Name".
     """
@@ -50,30 +48,31 @@ def load_excel_file_inspektor(filepath: str) -> pd.DataFrame:
     df["Name"] = df["Name"].astype(str).str.replace(r'\s+', ' ', regex=True).str.strip()
     df = df[df["Name"].astype(str).str.strip() != ""]
     
-    # 3. Convert "Date" from m/d/YYYY to YYYY-MM-DD.
+    # 3. Convert "Date" to YYYY-MM-DD format and rename to "Revenue Recognition Date"
     df["Date"] = pd.to_datetime(df["Date"], format="%m/%d/%Y").dt.strftime("%Y-%m-%d")
+    df["Revenue Recognition Date"] = df["Date"]
     
-    # 4. Add "Date YYYY": first 4 characters from "Date" (the year).
-    df["Date YYYY"] = df["Date"].str[:4]
+    # 4. Add "Revenue Recognition Date YYYY": first 4 characters from "Revenue Recognition Date" (the year).
+    df["Revenue Recognition Date YYYY"] = df["Revenue Recognition Date"].str[:4]
     
-    # 5. Add "Date MM": 6th and 7th characters from "Date" (the month).
-    df["Date MM"] = df["Date"].str[5:7]
+    # 5. Add "Revenue Recognition Date MM": 6th and 7th characters from "Revenue Recognition Date" (the month).
+    df["Revenue Recognition Date MM"] = df["Revenue Recognition Date"].str[5:7]
     
-    # Reorder columns: Move "Date YYYY" and "Date MM" right after "Date"
+    # Reorder columns: Move Revenue Recognition Date fields together
     cols = df.columns.tolist()
-    if "Date" in cols and "Date YYYY" in cols and "Date MM" in cols:
-        cols.remove("Date YYYY")
-        cols.remove("Date MM")
+    if "Date" in cols and "Revenue Recognition Date" in cols and "Revenue Recognition Date YYYY" in cols and "Revenue Recognition Date MM" in cols:
+        cols.remove("Revenue Recognition Date")
+        cols.remove("Revenue Recognition Date YYYY")
+        cols.remove("Revenue Recognition Date MM")
         date_index = cols.index("Date")
-        cols.insert(date_index + 1, "Date YYYY")
-        cols.insert(date_index + 2, "Date MM")
+        cols.insert(date_index + 1, "Revenue Recognition Date")
+        cols.insert(date_index + 2, "Revenue Recognition Date YYYY")
+        cols.insert(date_index + 3, "Revenue Recognition Date MM")
+        df = df[cols]
+        # Remove the original "Date" column after we've inserted the new columns correctly
+        cols.remove("Date")
         df = df[cols]
     
-    # Before:
-    # 6. Convert "Quantity" to integers.
-    # df["Quantity"] = pd.to_numeric(df["Quantity"], errors="coerce").astype("Int64")
-
-    # After:
     # 6. Convert "Quantity" to floats with two decimal places.
     df["Quantity"] = pd.to_numeric(df["Quantity"], errors="coerce").round(2)
     

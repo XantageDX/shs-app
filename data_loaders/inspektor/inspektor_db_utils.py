@@ -1,7 +1,7 @@
 import os
 import hashlib
 import pandas as pd
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, text, inspect
 from sqlalchemy.exc import SQLAlchemyError
 from dotenv import load_dotenv
 
@@ -21,7 +21,7 @@ def generate_row_hash(row: pd.Series) -> str:
     columns_to_hash = ["Customer:Project", "Item: Name", "Description", "Quantity", "Total", "Commission %", "Formula"]
     row_data = ''.join([str(row[col]) for col in columns_to_hash if col in row]).encode('utf-8')
     return hashlib.sha256(row_data).hexdigest()
-### TO DO ###
+
 def map_inspektor_to_harmonised():
     """
     Map Inspektor data from the 'master_inspektor_sales' table to the harmonised_table structure and transfer the hash.
@@ -29,12 +29,15 @@ def map_inspektor_to_harmonised():
     New logic:
       - Join master_inspektor_sales with commission rates from sales_rep_commission_tier.
       - Calculate:
-            "Comm Amount tier 1" = "Total Rep Due" * "Commission tier 1 rate"
-            "Comm tier 2 diff amount" = ("Total Rep Due" * "Commission tier 2 rate") - ("Total Rep Due" * "Commission tier 1 rate")
+            "Comm Amount tier 1" = "Formula" * "Commission tier 1 rate"
+            "Comm tier 2 diff amount" = ("Formula" * "Commission tier 2 rate") - ("Formula" * "Commission tier 1 rate")
       - Select and rename columns as follows:
-            "Date"       AS Date,
-            "Date YYYY"  AS "Date YYYY",
-            "Date MM"    AS "Date MM",
+            "Commission Date"       AS "Commission Date",
+            "Commission Date YYYY"  AS "Commission Date YYYY",
+            "Commission Date MM"    AS "Commission Date MM",
+            "Revenue Recognition Date" AS "Revenue Recognition Date",
+            "Revenue Recognition Date YYYY" AS "Revenue Recognition YYYY",
+            "Revenue Recognition Date MM" AS "Revenue Recognition MM",
             "Sales Rep Name"   AS "Sales Rep",
             "Total"    AS "Sales Actual",
             "Formula"    AS "Rev Actual",
@@ -43,8 +46,6 @@ def map_inspektor_to_harmonised():
             row_hash,
             "Comm Amount tier 1",
             "Comm tier 2 diff amount"
-            
-    (Temporarily omitting SHS Margin and Commission tier 2 date.)
     """
     engine = get_db_connection()
     try:
@@ -59,23 +60,29 @@ WITH commission_rates AS (
 ),
 commission_calculations AS (
     SELECT 
-        mcs."Date",
-        mcs."Date MM",
-        mcs."Date YYYY",
-        mcs."Sales Rep Name",
-        mcs."Total",
-        mcs."Formula",
-        CAST((mcs."Formula" * crt."Commission tier 1 rate") AS NUMERIC(15,2)) AS "Comm Amount tier 1",
-        CAST((mcs."Formula" * crt."Commission tier 2 rate" - mcs."Formula" * crt."Commission tier 1 rate") AS NUMERIC(15,2)) AS "Comm tier 2 diff amount",
-        mcs.row_hash
-    FROM master_inspektor_sales AS mcs
+        mis."Commission Date",
+        mis."Commission Date MM",
+        mis."Commission Date YYYY",
+        mis."Revenue Recognition Date",
+        mis."Revenue Recognition Date MM",
+        mis."Revenue Recognition Date YYYY",
+        mis."Sales Rep Name",
+        mis."Total",
+        mis."Formula",
+        CAST((mis."Formula" * crt."Commission tier 1 rate") AS NUMERIC(15,2)) AS "Comm Amount tier 1",
+        CAST((mis."Formula" * crt."Commission tier 2 rate" - mis."Formula" * crt."Commission tier 1 rate") AS NUMERIC(15,2)) AS "Comm tier 2 diff amount",
+        mis.row_hash
+    FROM master_inspektor_sales AS mis
     LEFT JOIN commission_rates AS crt
-        ON mcs."Sales Rep Name" = crt."Sales Rep Name"
+        ON mis."Sales Rep Name" = crt."Sales Rep Name"
 )
 SELECT 
-    "Date" AS "Date",
-    "Date MM" AS "Date MM",
-    "Date YYYY" AS "Date YYYY",
+    "Commission Date" AS "Commission Date",
+    "Commission Date MM" AS "Commission Date MM",
+    "Commission Date YYYY" AS "Commission Date YYYY",
+    "Revenue Recognition Date" AS "Revenue Recognition Date",
+    "Revenue Recognition Date MM" AS "Revenue Recognition MM",
+    "Revenue Recognition Date YYYY" AS "Revenue Recognition YYYY",
     "Sales Rep Name" AS "Sales Rep",
     "Total" AS "Sales Actual",
     "Formula" AS "Rev Actual",
@@ -97,36 +104,103 @@ FROM commission_calculations;
 
 def save_dataframe_to_db(df: pd.DataFrame, table_name: str = "master_inspektor_sales"):
     """
-    Save data to the 'master_inspektor_sales' table
+    Save data to the 'master_inspektor_sales' table by removing entries based on 'Revenue Recognition Date YYYY' and 'Revenue Recognition Date MM'.
+    Return debug messages as a list.
     """
     table_name = table_name.lower()
     engine = get_db_connection()
     debug_messages = []
+    
     # Generate row_hash for each row
     df["row_hash"] = df.apply(generate_row_hash, axis=1)
     
     try:
         with engine.connect() as conn:
-            # Identify the "Date MM" and "Date YYYY" values from the confirmed dataframe
-            closed_date_values = df[['Date MM', 'Date YYYY']].drop_duplicates().values.tolist()
-
-            # Convert the closed_date_values into a filterable SQL condition
-            condition = " OR ".join(
-                [f'("Date MM" = \'{mm}\' AND "Date YYYY" = \'{yyyy}\')' 
-                 for mm, yyyy in closed_date_values]
-            )
+            # Find which Revenue Recognition column names are used in this DataFrame
+            rev_year_col = None
+            rev_month_col = None
+            
+            # Check for different variations of column names
+            for col in ["Revenue Recognition Date YYYY", "Revenue Recognition YYYY"]:
+                if col in df.columns:
+                    rev_year_col = col
+                    break
+            
+            for col in ["Revenue Recognition Date MM", "Revenue Recognition MM"]:
+                if col in df.columns:
+                    rev_month_col = col
+                    break
+            
+            if not rev_year_col or not rev_month_col:
+                # Handle missing Revenue Recognition columns - fallback to Commission Date
+                debug_messages.append("⚠️ Warning: Could not find Revenue Recognition Date year/month columns in the DataFrame.")
+                
+                # Check if there are Commission Date columns to use as fallback
+                if "Commission Date YYYY" in df.columns and "Commission Date MM" in df.columns:
+                    date_values = df[['Commission Date YYYY', 'Commission Date MM']].drop_duplicates().values.tolist()
+                    
+                    # Convert the date_values into a filterable SQL condition
+                    condition = " OR ".join(
+                        [f'("Commission Date YYYY" = \'{yyyy}\' AND "Commission Date MM" = \'{mm}\')' 
+                         for yyyy, mm in date_values]
+                    )
+                    
+                    debug_messages.append("⚠️ Using Commission Date columns as fallback for deletion criteria.")
+                else:
+                    # No date columns found - this may result in unintended behavior
+                    debug_messages.append("❌ Error: No valid date columns found for deletion criteria. Operation may fail.")
+                    condition = "1=0"  # Empty condition that won't delete anything
+            else:
+                # Use Revenue Recognition Date columns as intended
+                date_values = df[[rev_year_col, rev_month_col]].drop_duplicates().values.tolist()
+                
+                # For database, we need to check which column names exist in the table
+                inspector = inspect(engine)
+                table_columns = [c["name"] for c in inspector.get_columns(table_name)]
+                
+                # Find the matching column names in the database table
+                db_rev_year_col = None
+                db_rev_month_col = None
+                
+                for col in table_columns:
+                    # For year column
+                    if col in ["Revenue Recognition Date YYYY", "Revenue Recognition YYYY"]:
+                        db_rev_year_col = col
+                    # For month column
+                    if col in ["Revenue Recognition Date MM", "Revenue Recognition MM"]:
+                        db_rev_month_col = col
+                
+                if not db_rev_year_col or not db_rev_month_col:
+                    debug_messages.append(f"⚠️ Warning: Revenue Recognition Date columns not found in table {table_name}.")
+                    # Fallback to Commission Date columns in the database
+                    if "Commission Date YYYY" in table_columns and "Commission Date MM" in table_columns:
+                        condition = " OR ".join(
+                            [f'("Commission Date YYYY" = \'{yyyy}\' AND "Commission Date MM" = \'{mm}\')' 
+                             for yyyy, mm in date_values]
+                        )
+                        debug_messages.append("⚠️ Using Commission Date columns in database as fallback for deletion.")
+                    else:
+                        debug_messages.append("❌ Error: No valid date columns found in database. Operation may fail.")
+                        condition = "1=0"  # Empty condition that won't delete anything
+                else:
+                    # Build the condition using the actual column names from the database
+                    condition = " OR ".join(
+                        [f'("{db_rev_year_col}" = \'{yyyy}\' AND "{db_rev_month_col}" = \'{mm}\')' 
+                         for yyyy, mm in date_values]
+                    )
+                    debug_messages.append(f"✅ Using Revenue Recognition Date columns for deletion criteria ({len(date_values)} date combinations).")
 
             # Delete existing records matching those dates
             delete_query = text(f"DELETE FROM {table_name} WHERE {condition}")
-            conn.execute(delete_query)
+            result = conn.execute(delete_query)
             conn.commit()
-            print(f"✅ Deleted records from '{table_name}' matching specified Date values.")
-            debug_messages.append(f"✅ Deleted records from '{table_name}' matching specified Date values.")
+            
+            # Log how many records were deleted
+            debug_messages.append(f"✅ Deleted {result.rowcount} records from '{table_name}' matching specified Revenue Recognition Date values.")
 
-            # Append the confirmed dataframe to the table
+            # Append the dataframe to the table
             df.to_sql(table_name, con=engine, if_exists="append", index=False)
-            print(f"✅ New data successfully added to '{table_name}'.")
-            debug_messages.append(f"✅ New data successfully added to '{table_name}'.")
+            debug_messages.append(f"✅ {len(df)} new records successfully added to '{table_name}'.")
 
         # If the table is 'master_inspektor_sales', update the harmonised table
         if table_name == "master_inspektor_sales":
@@ -138,8 +212,9 @@ def save_dataframe_to_db(df: pd.DataFrame, table_name: str = "master_inspektor_s
             debug_messages.extend(commission_tier_2_messages)
 
     except SQLAlchemyError as e:
-        print(f"❌ Error saving data to '{table_name}': {e}")
-        debug_messages.append(f"❌ Error saving data to '{table_name}': {e}")
+        error_message = str(e)
+        print(f"❌ Error saving data to '{table_name}': {error_message}")
+        debug_messages.append(f"❌ Error saving data to '{table_name}': {error_message}")
     finally:
         engine.dispose()
 
@@ -188,13 +263,13 @@ def update_commission_tier_2_date():
     """
     For Product Line 'InspeKtor', update the harmonised_table."Commission tier 2 date" as follows:
     
-      1. For each distinct Sales Rep and year ("Date YYYY"), retrieve all rows (ordered by "Date MM" ascending).
+      1. For each distinct Sales Rep and year ("Commission Date YYYY"), retrieve all rows (ordered by "Commission Date MM" ascending).
       2. Look up the commission tier threshold from sales_rep_commission_tier_threshold.
       3. Compute the cumulative sum of "Sales Actual" (month by month).
       4. When the cumulative sum reaches or exceeds the tier threshold for the first time (say in month_n),
-         update all rows in that group (i.e. for that Sales Rep and year) having "Date MM" >= month_n with:
-             "{Date YYYY}-{Date MM}"
-         where Date MM is taken from the first month where the threshold was met.
+         update all rows in that group (i.e. for that Sales Rep and year) having "Commission Date MM" >= month_n with:
+             "{Commission Date YYYY}-{Commission Date MM}"
+         where Commission Date MM is taken from the first month where the threshold was met.
          
       Additionally, if the threshold is not reached, ensure that any old value is overwritten with NULL.
     
@@ -229,8 +304,8 @@ def update_commission_tier_2_date():
                 debug_messages.append("No InspeKtor rows found in harmonised_table.")
                 return debug_messages
             
-            # Process by grouping rows by Sales Rep and Year ("Date YYYY")
-            groups = harmonised_df.groupby(["Sales Rep", "Date YYYY"])
+            # Process by grouping rows by Sales Rep and Year ("Commission Date YYYY")
+            groups = harmonised_df.groupby(["Sales Rep", "Commission Date YYYY"])
             
             for (sales_rep, year), group_df in groups:
                 # First, reset Commission tier 2 date to NULL for this Sales Rep and Year.
@@ -239,14 +314,14 @@ def update_commission_tier_2_date():
                     SET "Commission tier 2 date" = NULL
                     WHERE LOWER("Product Line") = LOWER('InspeKtor')
                     AND "Sales Rep" = :sales_rep
-                    AND "Date YYYY" = :year
+                    AND "Commission Date YYYY" = :year
                 """)
                 conn.execute(reset_query, {"sales_rep": sales_rep, "year": year})
                 conn.commit()
                 
                 group_df = group_df.copy()
-                # Convert "Date MM" to integer for proper sorting
-                group_df["Date_MM_int"] = group_df["Date MM"].astype(int)
+                # Convert "Commission Date MM" to integer for proper sorting
+                group_df["Date_MM_int"] = group_df["Commission Date MM"].astype(int)
                 group_df = group_df.sort_values("Date_MM_int")
                 
                 threshold_key = (sales_rep, year)
@@ -270,14 +345,14 @@ def update_commission_tier_2_date():
                 threshold_month = str(threshold_month_int).zfill(2)
                 commission_tier_2_date = f"{year}-{threshold_month}"
                 
-                # Update all rows in harmonised_table for this Sales Rep and Year with "Date MM" >= threshold_month
+                # Update all rows in harmonised_table for this Sales Rep and Year with "Commission Date MM" >= threshold_month
                 update_query = text("""
                     UPDATE harmonised_table
                     SET "Commission tier 2 date" = :commission_tier_2_date
                     WHERE LOWER("Product Line") = LOWER('InspeKtor')
                     AND "Sales Rep" = :sales_rep
-                    AND "Date YYYY" = :year
-                    AND "Date MM" >= :threshold_month
+                    AND "Commission Date YYYY" = :year
+                    AND "Commission Date MM" >= :threshold_month
                 """)
                 conn.execute(update_query, {
                     "commission_tier_2_date": commission_tier_2_date,

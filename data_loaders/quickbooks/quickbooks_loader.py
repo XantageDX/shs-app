@@ -92,8 +92,11 @@ def load_excel_file_quickbooks(filepath: str) -> pd.DataFrame:
             # Convert the mapping to a dictionary for faster lookup
             service_to_product_dict = service_to_product.set_index("Service Lines")["Product Lines"].to_dict()
 
+            # Rename Date to Revenue Recognition Date
+            df.rename(columns={'Date': 'Revenue Recognition Date'}, inplace=True)
+
             # Add the new column 'Product Lines'
-            df.insert(df.columns.get_loc('Date') + 1, 'Product Lines', '')  # Add the column after 'Date'
+            df.insert(df.columns.get_loc('Revenue Recognition Date') + 1, 'Product Lines', '')  # Add the column after 'Revenue Recognition Date'
 
             # Populate 'Product Lines' based on the 'Service Lines' mapping
             def map_product_line(service_line):
@@ -128,34 +131,27 @@ def load_excel_file_quickbooks(filepath: str) -> pd.DataFrame:
         # Add the new columns
         df.insert(df.columns.get_loc('Quantity') + 1, 'Margin', 
                   df['Amount line'] - (df['Purchase price'] * df['Quantity']))
-        #df.insert(df.columns.get_loc('Margin') + 1, 'Commission rate', 0.35)
-        #df.insert(df.columns.get_loc('Commission rate') + 1, 'Comm Amount', 
-        #          df['Margin'] * df['Commission rate'])
-        #df.insert(df.columns.get_loc('Comm Amount') + 1, 'SHS Margin', 
-        #          df['Margin'] - df['Comm Amount'])
-
 
     # Format numeric columns to float with two decimals and no separators
-    numeric_columns = ['Amount line', 'Purchase price', 'Margin']#, 'Comm Amount', 'SHS Margin']
+    numeric_columns = ['Amount line', 'Purchase price', 'Margin']
     for col in numeric_columns:
         if col in df.columns:
             df[col] = df[col].apply(lambda x: round(float(x), 2) if pd.notnull(x) else 0.0)
 
-    # Transform the 'Date' column
-    if 'Date' in df.columns:
-        # Convert the 'Date' column to datetime format, assuming MM/DD/YYYY
-        df['Date'] = pd.to_datetime(df['Date'], format='%m/%d/%Y', errors='coerce')
+    # Transform the 'Revenue Recognition Date' column
+    if 'Revenue Recognition Date' in df.columns:
+        # Convert the 'Revenue Recognition Date' column to datetime format, assuming MM/DD/YYYY
+        df['Revenue Recognition Date'] = pd.to_datetime(df['Revenue Recognition Date'], format='%m/%d/%Y', errors='coerce')
 
         # Check for invalid dates and drop rows with invalid dates
-        df = df[df['Date'].notnull()]
+        df = df[df['Revenue Recognition Date'].notnull()]
 
-        # Format the 'Date' column to YYYY-MM-DD (string representation)
-        df['Date'] = df['Date'].dt.strftime('%Y-%m-%d')
+        # Add new columns 'Revenue Recognition Date YYYY' and 'Revenue Recognition Date MM'
+        df['Revenue Recognition Date YYYY'] = df['Revenue Recognition Date'].dt.year.astype(str)
+        df['Revenue Recognition Date MM'] = df['Revenue Recognition Date'].dt.month.astype(str).str.zfill(2)
 
-        # Add new columns 'Date YYYY' and 'Date MM'
-        df.insert(df.columns.get_loc('Date') + 1, 'Date YYYY', df['Date'].str[:4])  # Extract the year
-        df.insert(df.columns.get_loc('Date YYYY') + 1, 'Date MM', df['Date'].str[5:7])  # Extract the month
-
+        # Format the 'Revenue Recognition Date' column to YYYY-MM-DD (string representation)
+        df['Revenue Recognition Date'] = df['Revenue Recognition Date'].dt.strftime('%Y-%m-%d')
 
     # Keep all values as-is without specific formatting
     return df

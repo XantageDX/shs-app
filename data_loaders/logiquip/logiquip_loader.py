@@ -1,5 +1,5 @@
 import pandas as pd
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine
 from dotenv import load_dotenv
 import os
 from data_loaders.validation_utils import validate_file_format
@@ -35,18 +35,17 @@ def load_master_sales_rep():
         engine.dispose()
 
 def load_excel_file_logiquip(filepath: str) -> pd.DataFrame:
-    # Set option to display all columns
+    # Read the Excel file with converters to preserve original format
     pd.set_option('display.max_columns', None)
     raw_df = pd.read_excel(filepath, header=1)
-    #print(raw_df.head(10))
-    #Run validation on the raw DataFrame
+    # Run validation on the raw DataFrame
     is_valid, missing = validate_file_format(raw_df, "Logiquip")
     if not is_valid:
         raise ValueError(f"Raw file format invalid. Missing columns: {', '.join(missing)}")
 
     # Proceed with the cleaning and enrichment using the raw_df
     df = raw_df.copy()
-
+    
     # Drop rows that are completely empty
     df.dropna(how='all', inplace=True)
     
@@ -65,7 +64,10 @@ def load_excel_file_logiquip(filepath: str) -> pd.DataFrame:
     
     # Handle NaN values in "Rep" column
     if "Rep" in df.columns:
-        df["Rep"] = df["Rep"].apply(lambda x: str(int(float(x))) if isinstance(x, str) and x.replace('.', '', 1).isdigit() else x)
+        df["Rep"] = df["Rep"].apply(lambda x: str(int(float(x))) if pd.notnull(x)
+                                         and isinstance(x, (int, float, str))
+                                         and str(x).replace('.','',1).isdigit()
+                       else str(x))
 
     # Convert "Comm Rate" from strings like "7,0%" to floats like 0.07
     if "Comm Rate" in df.columns:
@@ -80,22 +82,25 @@ def load_excel_file_logiquip(filepath: str) -> pd.DataFrame:
     if "Ship To Zip" in df.columns:
         df["Ship To Zip"] = df["Ship To Zip"].apply(lambda x: str(int(float(x))) if isinstance(x, str) and x.replace('.', '', 1).isdigit() else x)
     
-    # ✅ Handle "Date Paid" column
+    # ✅ Handle "Date Paid" column and rename to "Revenue Recognition Date"
     if "Date Paid" in df.columns:
         # Convert "Date Paid" to datetime and handle errors
-        df["Date Paid"] = pd.to_datetime(df["Date Paid"], format="%m-%d-%Y", errors='coerce')
+        df["Revenue Recognition Date"] = pd.to_datetime(df["Date Paid"], format="%m-%d-%Y", errors='coerce')
         
-        # Forward-fill <NA> values in "Date Paid"
-        df["Date Paid"] = df["Date Paid"].fillna(method="ffill")
+        # Forward-fill <NA> values in "Revenue Recognition Date"
+        df["Revenue Recognition Date"] = df["Revenue Recognition Date"].fillna(method="ffill")
         
-        # Create the reformatted "Date Paid" column in "YYYY-MM-DD" format
-        df["Date Paid"] = df["Date Paid"].dt.strftime('%Y-%m-%d')
+        # Create the reformatted "Revenue Recognition Date" column in "YYYY-MM-DD" format
+        df["Revenue Recognition Date"] = df["Revenue Recognition Date"].dt.strftime('%Y-%m-%d')
 
-        # Extract year and month from "Date Paid"
-        df["Date Paid YYYY"] = pd.to_datetime(df["Date Paid"], errors='coerce').dt.year.astype("Int64")
-        df["Date Paid MM"] = pd.to_datetime(df["Date Paid"], errors='coerce').dt.month.apply(
+        # Extract year and month from "Revenue Recognition Date"
+        df["Revenue Recognition YYYY"] = pd.to_datetime(df["Revenue Recognition Date"], errors='coerce').dt.year.astype("Int64")
+        df["Revenue Recognition MM"] = pd.to_datetime(df["Revenue Recognition Date"], errors='coerce').dt.month.apply(
             lambda x: f"{int(x):02d}" if pd.notnull(x) else ""
         )
+        
+        # Drop the original "Date Paid" column
+        df = df.drop(columns=["Date Paid"])
 
     # Convert numeric columns and ensure proper formatting
     numeric_columns = ["Comm Amt", "Doc Amt"]
@@ -119,7 +124,7 @@ def load_excel_file_logiquip(filepath: str) -> pd.DataFrame:
         df["Agency"] = df["Agency"].astype(str).replace(["", "nan"], pd.NA).ffill().str.strip()
 
     # Forward-fill specific columns
-    columns_to_inherit = ["Contract", "Date Paid YYYY", "Date Paid MM", "Ship To Zip", "PO Number", "Customer", "Doc Num"]
+    columns_to_inherit = ["Contract", "Revenue Recognition YYYY", "Revenue Recognition MM", "Ship To Zip", "PO Number", "Customer", "Doc Num"]
     existing_cols = [col for col in columns_to_inherit if col in df.columns]
     if existing_cols:
         for col in existing_cols:
@@ -133,20 +138,20 @@ def load_excel_file_logiquip(filepath: str) -> pd.DataFrame:
     master_df = load_master_sales_rep()
 
     def enrich_sales_rep(row):
-        # Match "SteppingStone" and "Date Paid" with master file criteria
+        # Match "SteppingStone" and "Revenue Recognition Date" with master file criteria
         match = master_df[
             (master_df["Data field value"] == row["SteppingStone"]) &
-            (master_df["Valid from"] <= row["Date Paid"]) &
-            ((master_df["Valid until"].isna()) | (master_df["Valid until"] >= row["Date Paid"]))
+            (master_df["Valid from"] <= row["Revenue Recognition Date"]) &
+            ((master_df["Valid until"].isna()) | (master_df["Valid until"] >= row["Revenue Recognition Date"]))
         ]
         if not match.empty:
             return match.iloc[0]["Sales Rep name"]
         return None
 
-    if "SteppingStone" in df.columns and "Date Paid" in df.columns:
+    if "SteppingStone" in df.columns and "Revenue Recognition Date" in df.columns:
         df["Sales Rep Name"] = df.apply(enrich_sales_rep, axis=1)
 
-    # ✅ Reorder columns to place "Enriched" before "SteppingStone"
+    # ✅ Reorder columns to place "Sales Rep Name" before "SteppingStone"
     if "Sales Rep Name" in df.columns and "SteppingStone" in df.columns:
         cols = df.columns.tolist()
         cols.remove("Sales Rep Name")

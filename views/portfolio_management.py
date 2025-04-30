@@ -360,13 +360,6 @@ with tab2:
                     st.session_state.save_initiated = True
                     st.warning("Are you sure you want to replace the current table with the new data?")
                     
-            # if st.session_state.save_initiated:
-            #     if st.button("Yes, Replace Table", key="commission_confirm_button"):
-            #         # Reorder the edited DataFrame as well, just to be sure.
-            #         edited_df = edited_df[ordered_columns]
-            #         update_table_data("sales_rep_commission_tier", edited_df)
-            #         st.session_state.save_initiated = False
-            #         st.session_state.loaded_commission_df = None
             ### SAVING WITH STRIPPING GUARDRAILS
             if st.session_state.save_initiated:
                 if st.button("Yes, Replace Table", key="commission_confirm_button"):

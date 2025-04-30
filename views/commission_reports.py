@@ -36,12 +36,13 @@ def get_unique_sales_reps():
         engine.dispose()
 
 def get_years_for_sales_rep(sales_rep):
-    """Fetch distinct years for a specific Sales Rep from the harmonised_table."""
+    """Fetch distinct years for a specific Sales Rep from the harmonised_table.
+    Uses Commission Date YYYY for commission attribution."""
     query = """
-        SELECT DISTINCT "Date YYYY"
+        SELECT DISTINCT "Commission Date YYYY"
         FROM harmonised_table
         WHERE "Sales Rep" = :sales_rep
-        ORDER BY "Date YYYY"
+        ORDER BY "Commission Date YYYY"
     """
     engine = get_db_connection()
     try:
@@ -56,12 +57,13 @@ def get_years_for_sales_rep(sales_rep):
         engine.dispose()
 
 def get_unique_product_lines(sales_rep, year):
-    """Fetch unique Product Lines from harmonised_table based on Sales Rep and Year."""
+    """Fetch unique Product Lines from harmonised_table based on Sales Rep and Year.
+    Uses Commission Date YYYY for commission attribution."""
     query = """
         SELECT DISTINCT "Product Line"
         FROM harmonised_table
         WHERE "Sales Rep" = :sales_rep
-          AND "Date YYYY" = :year
+          AND "Commission Date YYYY" = :year
         ORDER BY "Product Line"
     """
     engine = get_db_connection()
@@ -79,14 +81,15 @@ def get_unique_product_lines(sales_rep, year):
 def get_monthly_commission(sales_rep, year, month, product_line):
     """
     Fetch the sum of commission for a Sales Rep, Product Line, specific month, and year.
+    Uses Commission Date YYYY/MM for commission attribution.
     (Not used in the report generation below.)
     """
     query = """
         SELECT SUM("Comm Amount")
         FROM harmonised_table
         WHERE "Sales Rep" = :sales_rep
-          AND "Date YYYY" = :year
-          AND "Date MM" = :month
+          AND "Commission Date YYYY" = :year
+          AND "Commission Date MM" = :month
           AND "Product Line" = :product_line
     """
     engine = get_db_connection()
@@ -122,6 +125,8 @@ def generate_report(sales_rep, year):
         - After the threshold is reached, report commission = tier 1 + tier 2 for that month.
         
     The final DataFrame displays one row per Product Line with monthly columns and a YTD Total.
+    
+    Uses Commission Date YYYY/MM for all commission-related calculations.
     """
     engine = get_db_connection()
 
@@ -150,46 +155,47 @@ def generate_report(sales_rep, year):
                 # For each sales rep, get the distinct product lines in the year.
                 product_lines = get_unique_product_lines(rep, year)
                 for product_line in product_lines:
+                    
+                    # ensure our row exists
                     if product_line not in final_report_data:
-                        # Initialize dictionary for each month ("01" through "12") and a Total.
                         final_report_data[product_line] = {str(i).zfill(2): 0 for i in range(1, 13)}
                         final_report_data[product_line]["Total"] = 0
-                        # If a specific sales rep is selected, also fetch the threshold.
-                        if sales_rep != "All":
-                            threshold_query = """
-                                SELECT "Commission tier threshold"
-                                FROM sales_rep_commission_tier_threshold
-                                WHERE lower("Sales Rep name") = lower(:sales_rep)
-                                  AND "Year" = :year
-                                  AND lower("Product line") = lower(:product_line)
-                            """
-                            threshold_result = conn.execute(
-                                text(threshold_query),
-                                {"sales_rep": rep, "year": year, "product_line": product_line}
-                            )
-                            threshold = threshold_result.scalar() or 0
-                            final_report_data[product_line]["Comm Tier Threshold"] = threshold
-                        else:
-                            # If "All" is selected for sales rep, we won’t calculate cumulative sales.
-                            threshold = float('inf')
-                    else:
-                        # If already processed for this product line, fetch the threshold.
-                        threshold = final_report_data[product_line].get("Comm Tier Threshold", float('inf'))
+
+                    # **always** fetch this rep's true threshold**
+                    threshold_query = """
+                        SELECT "Commission tier threshold"
+                        FROM sales_rep_commission_tier_threshold
+                        WHERE lower("Sales Rep name") = lower(:sales_rep)
+                          AND "Year" = :year
+                          AND lower("Product line") = lower(:product_line)
+                    """
+                    threshold_result = conn.execute(
+                        text(threshold_query),
+                        {"sales_rep": rep, "year": year, "product_line": product_line}
+                    )
+                    t = threshold_result.scalar()
+                    # if no row, assume “infinite” so nobody ever hits it
+                    threshold = float('inf') if t is None else t
+
+                    # if we're in the single-rep view, record it for display
+                    if sales_rep != "All":
+                        final_report_data[product_line]["Comm Tier Threshold"] = threshold
 
                     # Modify the commission query to also fetch monthly Sales Actual.
                     commission_query = """
-                        SELECT "Date MM",
+                        SELECT 
+                            "Commission Date MM"::INTEGER AS month_number,
                             SUM("Sales Actual") AS sales_actual,
                             SUM("Comm Amount tier 1") AS tier1_sum,
                             SUM("Comm tier 2 diff amount") AS tier2_sum,
                             MAX("Commission tier 2 date") AS tier2_date
                         FROM harmonised_table
                         WHERE "Sales Rep" = :sales_rep
-                        AND "Date YYYY" = :year
+                        AND "Commission Date YYYY" = :year
                         AND LOWER("Product Line") = LOWER(:product_line)
                         
-                        GROUP BY "Date MM"
-                        ORDER BY CAST("Date MM" AS INTEGER)
+                        GROUP BY "Commission Date MM"
+                        ORDER BY CAST("Commission Date MM" AS INTEGER)
                     """
 
                     commission_result = conn.execute(
@@ -204,7 +210,7 @@ def generate_report(sales_rep, year):
 
                     # Process each month's data in order.
                     for row in commission_result.fetchall():
-                        month = row["Date MM"]
+                        month = row["month_number"]
                         month_str = str(month).zfill(2)
                         tier1_sum = row["tier1_sum"] if row["tier1_sum"] is not None else 0
                         tier2_sum = row["tier2_sum"] if row["tier2_sum"] is not None else 0
@@ -274,11 +280,12 @@ def generate_report(sales_rep, year):
 
 
 def get_years_for_sales_rep_any():
-    """Fetch distinct years for all Sales Reps from the harmonised_table."""
+    """Fetch distinct years for all Sales Reps from the harmonised_table.
+    Uses Commission Date YYYY for commission attribution."""
     query = """
-        SELECT DISTINCT "Date YYYY"
+        SELECT DISTINCT "Commission Date YYYY"
         FROM harmonised_table
-        ORDER BY "Date YYYY"
+        ORDER BY "Commission Date YYYY"
     """
     engine = get_db_connection()
     try:

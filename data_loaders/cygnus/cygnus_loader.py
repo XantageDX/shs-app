@@ -61,24 +61,37 @@ def load_excel_file_cygnus(filepath: str) -> pd.DataFrame:
         df["Rep %"] = df["Rep %"].astype(str).str.replace("%", "", regex=False).str.replace(",", ".", regex=False)
         df["Rep %"] = pd.to_numeric(df["Rep %"], errors='coerce')
     
-    # Split and format date columns while retaining "Inv Date", "Inv Date MM", and "Inv Date YYYY"
+    # Handle the ClosedDate column - now renamed to Revenue Recognition Date
     date_columns = ["Inv Date", "Due Date", "ClosedDate"]
     for date_col in date_columns:
         if date_col in df.columns:
             df[date_col] = pd.to_datetime(df[date_col], errors='coerce')
             if date_col == "ClosedDate":
-                df[f"{date_col} YYYY"] = df[date_col].dt.year.astype("Int64").astype(str).str.replace(",", "")
-                df[f"{date_col} MM"] = df[date_col].dt.month.astype("Int64").astype(str).str.zfill(2)
-            df[date_col] = df[date_col].dt.strftime('%Y-%m-%d')
+                # Rename to Revenue Recognition Date
+                df["Revenue Recognition Date"] = df[date_col].dt.strftime('%Y-%m-%d')
+                df["Revenue Recognition Date YYYY"] = df[date_col].dt.year.astype("Int64").astype(str).str.replace(",", "")
+                df["Revenue Recognition Date MM"] = df[date_col].dt.month.astype("Int64").astype(str).str.zfill(2)
+                # Drop the original column
+                df = df.drop(columns=[date_col])
+            else:
+                df[date_col] = df[date_col].dt.strftime('%Y-%m-%d')
 
-    # ✅ Move "Inv Date YYYY" and "Inv Date MM" right after "Inv Date"
-    if "ClosedDate" in df.columns and "ClosedDate YYYY" in df.columns and "ClosedDate MM" in df.columns:
+    # Reorder columns to place Revenue Recognition Date fields together
+    if "Revenue Recognition Date" in df.columns and "Revenue Recognition Date YYYY" in df.columns and "Revenue Recognition Date MM" in df.columns:
         cols = list(df.columns)
-        cols.remove("ClosedDate YYYY")
-        cols.remove("ClosedDate MM")
-        index_of_inv_date = cols.index("ClosedDate")
-        cols.insert(index_of_inv_date + 1, "ClosedDate YYYY")
-        cols.insert(index_of_inv_date + 2, "ClosedDate MM")
+        # Remove the columns from their current positions
+        cols.remove("Revenue Recognition Date")
+        cols.remove("Revenue Recognition Date YYYY")
+        cols.remove("Revenue Recognition Date MM")
+        # Find position to insert them together (after Due Date)
+        if "Due Date" in cols:
+            index_of_due_date = cols.index("Due Date")
+            cols.insert(index_of_due_date + 1, "Revenue Recognition Date")
+            cols.insert(index_of_due_date + 2, "Revenue Recognition Date YYYY")
+            cols.insert(index_of_due_date + 3, "Revenue Recognition Date MM")
+        else:
+            # If Due Date isn't present, just add them at the end of the DataFrame
+            cols.extend(["Revenue Recognition Date", "Revenue Recognition Date YYYY", "Revenue Recognition Date MM"])
         df = df[cols]
 
     # Convert numeric columns and ensure proper formatting
@@ -113,10 +126,9 @@ def load_excel_file_cygnus(filepath: str) -> pd.DataFrame:
         if column in df.columns:
             df[column] = df[column].ffill().str.strip()
 
-    # ✅ Load the master data from the database
+    # Enrich the DataFrame with Sales Rep Name from master_sales_rep
     master_df = load_master_sales_rep()
 
-    # ✅ Enrich the DataFrame
     def enrich_sales_rep(name):
         match = master_df[
             (master_df["Source"] == "Cygnus") & 
@@ -129,7 +141,7 @@ def load_excel_file_cygnus(filepath: str) -> pd.DataFrame:
     if "Name" in df.columns:
         df["Sales Rep Name"] = df["Name"].apply(enrich_sales_rep)
 
-    # ✅ Move the "Enriched" column right after "Sales Rep"
+    # Move the "Sales Rep Name" column right after "Sales Rep"
     if "Sales Rep" in df.columns and "Sales Rep Name" in df.columns:
         cols = list(df.columns)
         cols.remove("Sales Rep Name")

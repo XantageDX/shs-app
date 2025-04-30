@@ -41,13 +41,13 @@ def load_excel_file_novo(filepath: str, year: str = None, month: str = None) -> 
     
     Args:
         filepath: Path to the Excel file
-        year: Selected year (required)
-        month: Selected month (required)
+        year: Selected year (required) for Commission Date
+        month: Selected month (required) for Commission Date
         
     Returns:
         Transformed DataFrame with standardized columns
     """
-    # Check if year and month are provided
+    # Check if year and month are provided for Commission Date
     if not year or not month:
         raise ValueError("Year and month must be provided for Novo Excel files")
     
@@ -61,8 +61,8 @@ def load_excel_file_novo(filepath: str, year: str = None, month: str = None) -> 
     if not month_num:
         raise ValueError(f"Invalid month: {month}")
     
-    # Format date string
-    date_str = f"{year}-{month_num}"
+    # Format Commission Date string
+    commission_date_str = f"{year}-{month_num}"
     
     # Read Excel file with converters to preserve the original format of certain columns
     # This approach reads Customer PO Number as strings to preserve scientific notation
@@ -74,7 +74,12 @@ def load_excel_file_novo(filepath: str, year: str = None, month: str = None) -> 
         'Sales Order Number': str
     }
     
-    raw_df = pd.read_excel(filepath, header=2, converters=converters)
+    # Skip the first column (colA) which is empty
+    raw_df = pd.read_excel(filepath, header=2, converters=converters, usecols=lambda x: x != "Unnamed: 0")
+    
+    # If Unnamed:0 still appears, explicitly drop it
+    if "Unnamed: 0" in raw_df.columns:
+        raw_df = raw_df.drop(columns=["Unnamed: 0"])
     
     # Run validation on the raw DataFrame
     is_valid, missing = validate_file_format(raw_df, "Novo")
@@ -84,16 +89,26 @@ def load_excel_file_novo(filepath: str, year: str = None, month: str = None) -> 
     # Proceed with the cleaning and transformation
     df = raw_df.copy()
     
-    # Format Invoice Date from MM-DD-YYYY to YYYY-MM-DD
+    # Handle "Invoice Date" column - now becomes "Revenue Recognition Date"
     if "Invoice Date" in df.columns:
-        df["Invoice Date"] = pd.to_datetime(df["Invoice Date"], errors='coerce').dt.strftime('%Y-%m-%d')
+        # Format "Invoice Date" to "YYYY-MM-DD" string format if it's not already
+        df["Revenue Recognition Date"] = pd.to_datetime(df["Invoice Date"], errors='coerce').dt.strftime('%Y-%m-%d')
+        
+        # Extract "Revenue Recognition Date YYYY" - first 4 characters of the date string
+        df["Revenue Recognition Date YYYY"] = df["Revenue Recognition Date"].str[:4]
+        
+        # Extract "Revenue Recognition Date MM" - characters between the first and second hyphen
+        df["Revenue Recognition Date MM"] = df["Revenue Recognition Date"].str[5:7]
+        
+        # Drop the original "Invoice Date" column
+        df = df.drop(columns=["Invoice Date"])
 
-    # Format Order Date to YYYY-MM-DD string format
+    # Format Order Date to "YYYY-MM-DD" string format
     if "Order Date" in df.columns:
         df["Order Date"] = pd.to_datetime(df["Order Date"], errors='coerce').dt.strftime('%Y-%m-%d')
     
-    # Add the date columns based on user selection
-    df["Commission Date"] = date_str
+    # Add the Commission Date columns based on user selection
+    df["Commission Date"] = commission_date_str
     df["Commission Date YYYY"] = year
     df["Commission Date MM"] = month_num
 
@@ -145,10 +160,10 @@ def load_excel_file_novo(filepath: str, year: str = None, month: str = None) -> 
                             numeric_value = float(value)
                             # If the value is too large (likely already divided), use it directly
                             if numeric_value < 1:
-                                temp_series[idx] = round(numeric_value, 2)
+                                temp_series[idx] = round(numeric_value, 4)
                             else:
                                 # Otherwise assume it's a percentage value (e.g., 5 for 5%)
-                                temp_series[idx] = round(numeric_value / 100, 2)
+                                temp_series[idx] = round(numeric_value / 100, 4)
                         except (ValueError, TypeError):
                             temp_series[idx] = 0
                     else:
@@ -191,21 +206,55 @@ def load_excel_file_novo(filepath: str, year: str = None, month: str = None) -> 
         df["Sales Rep Name"] = df["Customer Number"].apply(lookup_sales_rep)
     else:
         df["Sales Rep Name"] = ""
+
+    # Move "Sales Rep Name" column to after "UD F LOTBUS" 
+    if "Sales Rep Name" in df.columns and "UD F LOTBUS" in df.columns:
+        # Get all column names
+        all_columns = list(df.columns)
+        
+        # Remove "Sales Rep Name" from its current position
+        all_columns.remove("Sales Rep Name")
+        
+        # Find the position of "UD F LOTBUS"
+        ud_f_lotbus_index = all_columns.index("UD F LOTBUS")
+        
+        # Insert "Sales Rep Name" after "UD F LOTBUS"
+        all_columns.insert(ud_f_lotbus_index + 1, "Sales Rep Name")
+        
+        # Reorder the DataFrame columns
+        df = df[all_columns]
+
+    # Reorder columns to group date fields together
+    # First, get all columns except the date columns we want to reorder
+    date_columns = ["Revenue Recognition Date", "Revenue Recognition Date YYYY", "Revenue Recognition Date MM", 
+                   "Commission Date", "Commission Date YYYY", "Commission Date MM"]
+    non_date_columns = [col for col in df.columns if col not in date_columns]
     
-    # Reorder columns to ensure consistent format
-    all_expected_columns = [
-        "Salesperson Number", "AR Division Number", "Customer Number", 
-        "Bill To Name", "Ship To Name", "Invoice Number", "Invoice Date",
-        "Customer PO Number", "Item Code", "Alias Item Number", 
-        "Item Code Description", "Commission Date", "Commission Date YYYY", "Commission Date MM",
-        "Quantity Ordered", "Qty Shipped", "Quantity Backordered",
-        "Unit Price", "Extension", "Comment", "Order Date", 
-        "Sales Order Number", "Ship To State", "Ship To Zip Code",
-        "UD F LOTBUS", "Sales Rep Name", "Commission Percentage", "Commission Amount"
-    ]
+    # Find the position to insert Revenue Recognition Date columns (after "Customer PO Number")
+    if "Customer PO Number" in non_date_columns:
+        po_index = non_date_columns.index("Customer PO Number")
+        # Insert Revenue Recognition Date columns
+        rev_date_columns = ["Revenue Recognition Date", "Revenue Recognition Date YYYY", "Revenue Recognition Date MM"]
+        for i, col in enumerate(rev_date_columns):
+            if col in df.columns:
+                non_date_columns.insert(po_index + 1 + i, col)
     
-    # Only keep columns that exist in the DataFrame
-    existing_columns = [col for col in all_expected_columns if col in df.columns]
-    df = df[existing_columns]
+    # Find the position to insert Commission Date columns (after Item Code Description)
+    if "Item Code Description" in non_date_columns:
+        desc_index = non_date_columns.index("Item Code Description")
+        # Insert Commission Date columns
+        comm_date_columns = ["Commission Date", "Commission Date YYYY", "Commission Date MM"]
+        for i, col in enumerate(comm_date_columns):
+            if col in df.columns:
+                non_date_columns.insert(desc_index + 1 + i, col)
+    
+    # Ensure all columns from the DataFrame are included in the final order
+    final_columns = []
+    for col in non_date_columns:
+        if col in df.columns and col not in final_columns:
+            final_columns.append(col)
+    
+    # Reorder the DataFrame columns
+    df = df[final_columns]
     
     return df
